@@ -1,0 +1,6 @@
+- name: Configure XPS server
+  hosts: xps
+  become: true
+  roles:
+    - common
+    - laptop_always_on
