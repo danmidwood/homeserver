@@ -56,6 +56,10 @@ pacman -S --noconfirm git ansible
 # Download install repo
 git clone https://github.com/danmidwood/homeserver.git /root/homeserver
 
+cd /root/homeserver
+
+ansible-playbook -i inventory/hosts.ini playbooks/xps.yml
+
 EOF
 
 # Unmount partitions and reboot

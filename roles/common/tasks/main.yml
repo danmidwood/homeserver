@@ -1,0 +1,78 @@
+- name: Check if we are in a chroot environment
+  ansible.builtin.shell: "systemd-detect-virt --chroot"
+  register: chroot_check
+  ignore_errors: true
+  changed_when: false
+
+- name: Set chroot fact
+  ansible.builtin.set_fact:
+    is_chroot: chroot_check.rc == 0
+
+- name: Set timezone
+  community.general.timezone:
+    name: "Europe/London"
+  when: not is_chroot
+
+- name: Set locale
+  ansible.builtin.lineinfile:
+    path: /etc/locale.gen
+    regexp: '^#en_GB.UTF-8 UTF-8'
+    line: 'en_GB.UTF-8 UTF-8'
+    state: present
+
+- name: Comment out all other locales
+  ansible.builtin.lineinfile:
+    path: /etc/locale.gen
+    regexp: '^(?!#en_GB.UTF-8 UTF-8)'
+    line: '# \0'
+    state: present
+
+- name: Generate locale
+  ansible.builtin.command: locale-gen
+  changed_when: false
+
+- name: Set LANG environment variable
+  ansible.builtin.lineinfile:
+    path: /etc/locale.conf
+    line: 'LANG=en_GB.UTF-8'
+    create: true
+
+- name: Set hostname
+  ansible.builtin.hostname:
+    name: xps.home.danmidwood.com
+    use: systemd
+  when: not is_chroot
+
+- name: Install packages
+  pacman:
+    name:
+      - less
+      - emacs
+      - git
+      - htop
+      - networkmanager
+      - sudo
+    state: present
+
+- name: Ensure user is present
+  ansible.builtin.user:
+    name: daniel
+    groups: wheel
+    shell: /bin/bash
+    state: present
+    password: "$1$OdfTOiq7$/jaUbUN1UNMnZ1w8q0ik3."
+
+- name: Ensure wheel group is in the sudoers list
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers
+    regexp: '^# %wheel ALL=(ALL) ALL'
+    line: '%wheel ALL=(ALL) ALL'
+    state: present
+    validate: 'visudo -cf %s'
+
+- name: Enable NetworkManager service
+  ansible.builtin.systemd:
+    name: NetworkManager
+    enabled: true
+    state: started
+  when: not is_chroot

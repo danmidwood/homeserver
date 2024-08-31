@@ -1,0 +1,13 @@
+- name: Ensure logind.conf exists
+  lineinfile:
+    path: /etc/systemd/logind.conf
+    state: present
+    create: yes
+    backup: yes
+    line: 'HandleLidSwitchExternalPower=ignore'
+  when: not is_chroot # dependency on common for this
+
+- name: Restart systemd-logind to apply changes
+  systemd:
+    name: systemd-logind
+    state: restarted
