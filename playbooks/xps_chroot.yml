@@ -1,9 +1,7 @@
-- name: Configure XPS server
+- name: Install base XPS server
   hosts: xps
   become: true
   roles:
     - network
     - sshd
     - daniel
-    - common
-    - laptop_always_on
