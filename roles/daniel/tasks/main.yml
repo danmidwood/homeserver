@@ -2,9 +2,42 @@
   ansible.builtin.user:
     name: daniel
     groups: wheel
-    shell: /bin/bash
+    shell: /bin/zsh
     state: present
     password: "$1$OdfTOiq7$/jaUbUN1UNMnZ1w8q0ik3."
+
+- name: Ensure Zsh is installed
+  package:
+    name: zsh
+    state: present
+
+- name: Clone Oh My Zsh repository
+  git:
+    repo: https://github.com/ohmyzsh/ohmyzsh.git
+    dest: /home/daniel/.oh-my-zsh
+    version: master
+    force: yes
+    update: yes
+    accept_hostkey: yes
+  become_user: daniel
+
+- name: Copy the default .zshrc template for Oh My Zsh
+  copy:
+    src: /home/daniel/.oh-my-zsh/templates/zshrc.zsh-template
+    dest: /home/daniel/.zshrc
+    remote_src: yes
+    owner: daniel
+    group: daniel
+    mode: '0644'
+
+- name: Set Oh My Zsh theme to xiong-chiamiov-plus
+  lineinfile:
+    path: /home/daniel/.zshrc
+    owner: daniel
+    group: daniel
+    mode: '0644'
+    line: 'ZSH_THEME=xiong-chiamiov-plus'
+    regexp: '^ZSH_THEME='
 
 - name: Ensure .ssh directory exists
   ansible.builtin.file:
