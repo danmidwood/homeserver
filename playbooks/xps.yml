@@ -4,3 +4,5 @@
   roles:
     - common
     - laptop_always_on
+    - sshd
+    - daniel

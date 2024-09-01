@@ -1,0 +1,23 @@
+- name: Ensure user is present
+  ansible.builtin.user:
+    name: daniel
+    groups: wheel
+    shell: /bin/bash
+    state: present
+    password: "$1$OdfTOiq7$/jaUbUN1UNMnZ1w8q0ik3."
+
+- name: Ensure .ssh directory exists
+  ansible.builtin.file:
+    path: /home/daniel/.ssh
+    state: directory
+    owner: daniel
+    group: daniel
+    mode: '0700'
+
+- name: Add public key to authorized_keys
+  ansible.builtin.copy:
+    dest: /home/daniel/.ssh/authorized_keys
+    content: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH3z/AM35YYthOkWQIXgJzqByoTI3u2W9H0J23ytEQBN daniel@obrizumgroup.com"
+    owner: daniel
+    group: daniel
+    mode: '0600'

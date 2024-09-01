@@ -52,15 +52,9 @@
       - htop
       - networkmanager
       - sudo
+      - openssh
+      - tmux
     state: present
-
-- name: Ensure user is present
-  ansible.builtin.user:
-    name: daniel
-    groups: wheel
-    shell: /bin/bash
-    state: present
-    password: "$1$OdfTOiq7$/jaUbUN1UNMnZ1w8q0ik3."
 
 - name: Ensure wheel group is in the sudoers list
   ansible.builtin.lineinfile:

@@ -1,0 +1,31 @@
+- name: Disable password authentication and enable key-based authentication in sshd
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication no'
+    state: present
+
+- name: Ensure PubkeyAuthentication is enabled
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PubkeyAuthentication'
+    line: 'PubkeyAuthentication yes'
+    state: present
+
+- name: Ensure AuthorizedKeysFile is configured
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?AuthorizedKeysFile'
+    line: 'AuthorizedKeysFile .ssh/authorized_keys'
+    state: present
+
+- name: Restart SSH service to apply changes
+  ansible.builtin.systemd:
+    name: sshd
+    state: restarted
+
+- name: Enable SSH service so it starts with the system
+  ansible.builtin.systemd:
+    name: sshd
+    enabled: true
+    state: started
