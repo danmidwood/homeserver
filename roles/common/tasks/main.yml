@@ -1,17 +1,13 @@
-- name: Check if we are in a chroot environment
-  ansible.builtin.shell: "systemd-detect-virt --chroot"
-  register: chroot_check
-  ignore_errors: true
-  changed_when: false
-
-- name: Set chroot fact
-  ansible.builtin.set_fact:
-    is_chroot: chroot_check.rc == 0
+- name: Install packages
+  pacman:
+    name:
+      - emacs
+      - less
+    state: present
 
 - name: Set timezone
   community.general.timezone:
     name: "Europe/London"
-  when: not is_chroot
 
 - name: Set locale
   ansible.builtin.lineinfile:
@@ -41,33 +37,3 @@
   ansible.builtin.hostname:
     name: xps.home.danmidwood.com
     use: systemd
-  when: not is_chroot
-
-- name: Install packages
-  pacman:
-    name:
-      - less
-      - zsh
-      - emacs
-      - git
-      - htop
-      - networkmanager
-      - sudo
-      - openssh
-      - tmux
-    state: present
-
-- name: Ensure wheel group is in the sudoers list
-  ansible.builtin.lineinfile:
-    path: /etc/sudoers
-    regexp: '^# %wheel ALL=(ALL) ALL'
-    line: '%wheel ALL=(ALL) ALL'
-    state: present
-    validate: 'visudo -cf %s'
-
-- name: Enable NetworkManager service
-  ansible.builtin.systemd:
-    name: NetworkManager
-    enabled: true
-    state: started
-  when: not is_chroot

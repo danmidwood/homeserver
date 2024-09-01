@@ -58,7 +58,7 @@ git clone https://github.com/danmidwood/homeserver.git /root/homeserver
 
 cd /root/homeserver
 
-ansible-playbook -i inventory/hosts_xps_local.ini playbooks/xps.yml
+ansible-playbook -i inventory/hosts_xps_local.ini playbooks/xps_chroot.yml
 
 EOF
 

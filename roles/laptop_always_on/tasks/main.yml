@@ -5,7 +5,6 @@
     create: yes
     backup: yes
     line: 'HandleLidSwitchExternalPower=ignore'
-  when: not is_chroot # dependency on common for this
 
 - name: Restart systemd-logind to apply changes
   systemd:

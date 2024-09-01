@@ -1,3 +1,12 @@
+- name: Install Daniel's dependencies
+  package:
+    name:
+      - git
+      - openssh
+      - sudo
+      - zsh
+    state: present
+
 - name: Ensure user is present
   ansible.builtin.user:
     name: daniel
@@ -6,6 +15,14 @@
     state: present
     password: "$1$OdfTOiq7$/jaUbUN1UNMnZ1w8q0ik3."
 
+- name: Ensure wheel group is in the sudoers list
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers
+    regexp: '^# %wheel ALL=(ALL) ALL'
+    line: '%wheel ALL=(ALL) ALL'
+    state: present
+    validate: 'visudo -cf %s'
+
 - name: Add user to sudoers with no password requirement
   ansible.builtin.lineinfile:
     path: /etc/sudoers
@@ -13,11 +30,6 @@
     regexp: '^daniel '
     line: 'daniel ALL=(ALL) NOPASSWD:ALL'
     validate: 'visudo -cf %s'
-
-- name: Ensure Zsh is installed
-  package:
-    name: zsh
-    state: present
 
 - name: Clone Oh My Zsh repository
   git:

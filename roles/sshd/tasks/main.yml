@@ -1,3 +1,9 @@
+- name: Install Sshd's dependencies
+  package:
+    name:
+      - openssh
+    state: present
+
 - name: Disable password authentication and enable key-based authentication in sshd
   ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config
@@ -18,11 +24,6 @@
     regexp: '^#?AuthorizedKeysFile'
     line: 'AuthorizedKeysFile .ssh/authorized_keys'
     state: present
-
-- name: Restart SSH service to apply changes
-  ansible.builtin.systemd:
-    name: sshd
-    state: restarted
 
 - name: Enable SSH service so it starts with the system
   ansible.builtin.systemd:

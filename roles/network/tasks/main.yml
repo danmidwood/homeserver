@@ -1,0 +1,11 @@
+- name: Install Network dependencies
+  package:
+    name:
+      - networkmanager
+    state: present
+
+- name: Enable NetworkManager service
+  ansible.builtin.systemd:
+    name: NetworkManager
+    enabled: true
+    state: started
