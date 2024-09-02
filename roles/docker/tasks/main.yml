@@ -1,0 +1,17 @@
+- name: Ensure Docker is installed
+  package:
+    name: docker
+    state: present
+
+- name: Start and enable Docker service
+  systemd:
+    name: docker
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Add daniel user to Docker group
+  user:
+    name: daniel
+    groups: docker
+    append: true

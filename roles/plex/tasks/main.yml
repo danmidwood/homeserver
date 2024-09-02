@@ -1,0 +1,47 @@
+- name: Ensure Python requests is installed
+  ansible.builtin.package:
+    name:
+      - python-requests
+    state: present
+
+# - name: Create Plex config directory
+#   file:
+#     path: /mnt/storage/config/plex
+#     state: directory
+#     owner: daniel
+#     group: daniel
+#     mode: '0755'
+
+# - name: Create Plex media directory
+#   file:
+#     path: /mnt/storage/media
+#     state: directory
+#     owner: nobody
+#     group: nobody
+#     mode: '0755'
+
+- name: Pull the latest Plex Docker image
+  docker_image:
+    name: "plexinc/pms-docker:latest"
+    source: pull
+
+- name: Run Plex container
+  docker_container:
+    name: "plex"
+    image: "plexinc/pms-docker:latest"
+    state: started
+    restart_policy: always
+    ports:
+      - "32400:32400"
+      - "3005:3005"
+      - "8324:8324"
+      - "32469:32469"
+      - "32410:32410/udp"
+      - "32412:32412/udp"
+      - "32413:32413/udp"
+      - "32414:32414/udp"
+    volumes:
+      - /mnt/storage/config/plex:/config
+      - /mnt/storage/media:/data
+    env:
+      PLEX_CLAIM: claim-sLM9Es5f6-xLU-sdubWs # Replace this one new system init
