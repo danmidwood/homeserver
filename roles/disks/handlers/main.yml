@@ -1,0 +1,3 @@
+- name: Regenerate initramfs
+  command: mkinitcpio -P
+  become: true

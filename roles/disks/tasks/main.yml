@@ -1,0 +1,46 @@
+- name: Install packages
+  pacman:
+    name:
+      - mdadm
+      - rsync
+    state: present
+
+- name: Ensure Terra Master DAS drives config for raid array in /etc/mdadm.conf
+  ansible.builtin.lineinfile:
+    path: /etc/mdadm.conf
+    line: "ARRAY /dev/md0 metadata=1.2 UUID=dbb934e7:7bb90998:f2c626f4:512d244e"
+    state: present
+    regexp: "^ARRAY /dev/md0"
+    backup: yes
+  become: yes
+
+- name: Ensure Terra Master DAS raid array is /etc/fstab to be mounted
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "UUID=d075487a-2e16-4b82-a41b-26466c1456ba       /mnt/tmdas      btrfs           defaults,nofail 0 0"
+    state: present
+    regexp: "^UUID=d075487a-2e16-4b82-a41b-26466c1456ba"
+    backup: yes
+  become: yes
+
+- name: Ensure seagate usb drive is /etc/fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "UUID=5E28-32A7  /mnt/seagate    exfat           defaults,uid=1000,gid=1000 0 0"
+    state: present
+    regexp: "^UUID=5E28-32A7"
+    backup: yes
+  become: yes
+
+# This sets the entire line because I haven't worked out how to split the content and add only
+# mdadm_udev.
+# If anything else adds an entry then this task will remove it, which is clearly not desired.
+- name: Add mdadm to mkinitcpio.
+  become: yes
+  ansible.builtin.lineinfile:
+    path: /etc/mkinitcpio.conf
+    regexp: '^HOOKS=.*'
+    line: 'HOOKS=(base udev autodetect mdadm_udev microcode modconf kms keyboard keymap consolefont block filesystems fsck)'
+    backup: yes
+  notify:
+    - Regenerate initramfs

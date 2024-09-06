@@ -42,6 +42,6 @@
       - "32414:32414/udp"
     volumes:
       - /mnt/storage/config/plex:/config
-      - /mnt/storage/media:/data
+      - /mnt/tmdas/video:/data
     env:
       PLEX_CLAIM: claim-sLM9Es5f6-xLU-sdubWs # Replace this one new system init
