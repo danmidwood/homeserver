@@ -1,0 +1,29 @@
+- name: Install makemkv dependencies
+  ansible.builtin.package:
+    name:
+      - base-devel
+      - debugedit
+      - fakeroot
+      - ffmpeg
+      - pipewire-jack
+    state: present
+
+- name: Add the SCSI Generic (sg) module and make sure it is loaded after reboots
+  community.general.modprobe:
+    name: sg
+    state: present
+    persistent: present
+
+- name: Install MakeMKV CLI tools from AUR
+  kewlfft.aur.aur:
+    name: makemkv-cli
+    use: makepkg
+    state: present
+  become: true
+  become_user: daniel
+
+- name: Install MKVToolNix
+  ansible.builtin.package:
+    name:
+      - mkvtoolnix-cli
+    state: present
