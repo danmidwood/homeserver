@@ -1,0 +1,20 @@
+- name: Pull Portainer image
+  docker_image:
+    name: portainer/portainer-ce
+    source: pull
+
+- name: Create Portainer volume
+  docker_volume:
+    name: portainer_data
+
+- name: Run Portainer container
+  docker_container:
+    name: portainer
+    image: portainer/portainer-ce
+    state: started
+    ports:
+      - "8000:8000"
+      - "9000:9000"
+    volumes:
+      - portainer_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
