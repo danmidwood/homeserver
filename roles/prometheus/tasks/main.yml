@@ -1,0 +1,29 @@
+- name: Ensure Prometheus and its Node Exporter is installed
+  ansible.builtin.package:
+    name:
+      - prometheus
+      - prometheus-node-exporter
+    state: present
+
+- name: Start and enable Prometheus
+  systemd:
+    name: prometheus
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Start and enable Node Exporter
+  systemd:
+    name: prometheus-node-exporter
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Copy Prometheus configuration file
+  copy:
+    src: prometheus.yml
+    dest: /etc/prometheus/prometheus.yml
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+  notify: Restart Prometheus

@@ -1,0 +1,15 @@
+- name: Pull the latest Grafana Docker image
+  docker_image:
+    name: "grafana/grafana:latest"
+    source: pull
+
+- name: Run Grafana container
+  docker_container:
+    name: "grafana"
+    image: "grafana/grafana:latest"
+    state: started
+    restart_policy: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
