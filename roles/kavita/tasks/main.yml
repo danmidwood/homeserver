@@ -1,0 +1,26 @@
+- name: Ensure Python requests is installed
+  ansible.builtin.package:
+    name:
+      - python-requests
+    state: present
+
+- name: Pull the latest Kavita Docker image
+  docker_image:
+    name: "linuxserver/kavita:latest"
+    source: pull
+
+- name: Run Kavita container
+  docker_container:
+    name: "kavita"
+    image: "linuxserver/kavita:latest"
+    state: started
+    restart_policy: always
+    ports:
+      - "5000:5000"
+    volumes:
+      - kavita_config:/config
+      - /mnt/tmdas/Books:/books
+    env:
+      TZ: "Europe/London"
+      PUID: "1000"
+      GUID: "1000"
