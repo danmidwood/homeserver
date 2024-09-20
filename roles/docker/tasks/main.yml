@@ -1,3 +1,28 @@
+- name: Ensure docker volume directory exists so we can mount it
+  ansible.builtin.file:
+    path: /var/lib/docker/volumes
+    state: directory
+    owner: root
+    group: root
+    mode: '0710'
+
+- name: Add a mount to store the docker volumes on the DAS
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "/mnt/tmdas/dockervolumes /var/lib/docker/volumes none bind 0 0"
+    state: present
+    backup: yes
+  become: yes
+
+- name: Mount the docker volumes directory
+  ansible.builtin.mount:
+    path: /var/lib/docker/volumes
+    src: /mnt/tmdas/dockervolumes
+    fstype: none
+    opts: bind
+    state: mounted
+  become: yes
+
 - name: Ensure Docker is installed
   package:
     name: docker
@@ -16,18 +41,3 @@
     groups: docker
     append: true
 
-- name: Ensure docker volume directory exists
-  ansible.builtin.file:
-    path: /var/lib/docker/volumes
-    state: directory
-    owner: root
-    group: root
-    mode: '0710'
-
-- name: Add a mount to store the docker volumes on the DAS
-  ansible.builtin.lineinfile:
-    path: /etc/fstab
-    line: "/mnt/tmdas/dockervolumes /var/lib/docker/volumes none bind 0 0"
-    state: present
-    backup: yes
-  become: yes
