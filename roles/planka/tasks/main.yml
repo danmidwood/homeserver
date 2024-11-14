@@ -1,0 +1,49 @@
+- name: Pull the latest Planka Docker image
+  docker_image:
+    name: "ghcr.io/plankanban/planka:latest"
+    source: pull
+
+- name: Pull the 16-alpine Postgres Docker image
+  docker_image:
+    name: "postgres:16-alpine"
+    source: pull
+
+- name: Create Docker network
+  docker_network:
+    name: planka_network
+
+- name: Run Postgres container
+  docker_container:
+    name: "planka-postgres"
+    image: "postgres:16-alpine"
+    state: started
+    restart_policy: always
+    volumes:
+      - /mnt/storage/config/planka/db-data:/var/lib/postgresql/data
+    env:
+      POSTGRES_DB: "planka"
+      POSTGRES_HOST_AUTH_METHOD: "trust"
+    networks:
+      - name: planka_network
+
+- name: Run Planka container
+  docker_container:
+    name: "planka"
+    image: "ghcr.io/plankanban/planka:latest"
+    state: started
+    restart_policy: always
+    volumes:
+      - /mnt/storage/config/planka/user-avatars:/app/public/user-avatars
+      - /mnt/storage/config/planka/project-background-images:/app/public/project-background-images
+      - /mnt/storage/config/planka/attachments:/app/private/attachments
+    ports:
+      - "1337:1337"
+    networks:
+      - name: planka_network
+    env_file: /mnt/storage/config/planka/.env
+    env:
+      BASE_URL: http://xps.fritz.box:1337
+      DATABASE_URL: postgresql://postgres@planka-postgres/planka
+      DEFAULT_ADMIN_EMAIL: danieljamesmidwood@gmail.com
+      DEFAULT_ADMIN_NAME: Daniel Midwood
+      DEFAULT_ADMIN_USERNAME: daniel
