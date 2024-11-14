@@ -13,7 +13,7 @@
     groups: wheel
     shell: /bin/zsh
     state: present
-    password: "$1$OdfTOiq7$/jaUbUN1UNMnZ1w8q0ik3."
+    password: "{{ daniel_password | password_hash('sha512') }}"
 
 - name: Ensure wheel group is in the sudoers list
   ansible.builtin.lineinfile:

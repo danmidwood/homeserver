@@ -1,6 +1,8 @@
 - name: Configure XPS server
   hosts: xps
   become: true
+  vars_files:
+    - ../user_passwords.yml
   roles:
     - network
     - sshd
