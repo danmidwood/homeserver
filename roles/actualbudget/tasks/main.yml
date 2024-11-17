@@ -1,0 +1,24 @@
+- name: Pull the latest Actual Budget Docker image
+  docker_image:
+    name: "actualbudget/actual-server:latest"
+    source: pull
+
+- name: Create Actual Budget data directory
+  file:
+    path: /mnt/storage/config/actual-budget/data
+    state: directory
+    owner: daniel
+    group: daniel
+    mode: '0755'
+
+
+- name: Run Actual Budget container
+  docker_container:
+    name: "actual_budget"
+    image: "actualbudget/actual-server:latest"
+    state: started
+    restart_policy: always
+    volumes:
+      - /mnt/storage/config/actual-budget/data:/data
+    ports:
+      - "5006:5006"
