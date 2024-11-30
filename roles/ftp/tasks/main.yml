@@ -1,0 +1,29 @@
+- name: Create FTP data directory
+  file:
+    path: /mnt/storage/ftp/data
+    state: directory
+    owner: daniel
+    group: daniel
+    mode: '0755'
+
+- name: Pull FTP server Docker image
+  docker_image:
+    name: fauria/vsftpd
+    source: pull
+
+- name: Start FTP container
+  docker_container:
+    name: ftp_server
+    image: fauria/vsftpd
+    ports:
+      - "21:21"
+    volumes:
+      - "/mnt/storage/ftp/data:/home/vsftpd"
+    env:
+      FTP_USER: ftpuser
+      FTP_PASS: "{{ ftp_password }}"
+      PASV_ENABLE: "NO"
+      WRITE_ENABLE: "YES"
+      ANONYMOUS_ENABLE: "NO"
+    state: started
+    restart_policy: always
