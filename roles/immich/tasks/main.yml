@@ -1,0 +1,95 @@
+- name: Create Immich Docker network
+  docker_network:
+    name: immich_network
+
+- name: Pull vector search Postgres Docker image
+  docker_image:
+    name: "docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:90724186f0a3517cf6914295b5ab410db9ce23190a2d9d0b9dd6463e3fa298f0"
+    source: pull
+
+- name: Run Postgres container
+  docker_container:
+    name: "immich-postgres"
+    image: "docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:90724186f0a3517cf6914295b5ab410db9ce23190a2d9d0b9dd6463e3fa298f0"
+    state: started
+    restart_policy: always
+    volumes:
+      - /mnt/storage/config/immich/pg_data:/var/lib/postgresql/data
+    env:
+      POSTGRES_DB: "immich"
+      POSTGRES_PASSWORD: "{{ immich_password }}"
+      POSTGRES_USER: "immich"
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    networks:
+      - name: immich_network
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=vectors.so
+      - -c
+      - 'search_path="$$user", public, vectors'
+      - -c
+      - logging_collector=on
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - wal_compression=on
+
+- name: Pull the Immich Redis container
+  docker_image:
+    name: "docker.io/redis:6.2-alpine@sha256:eaba718fecd1196d88533de7ba49bf903ad33664a92debb24660a922ecd9cac8"
+    source: pull
+
+- name: Run the Immich Redis container
+  docker_container:
+    name: "immich-redis"
+    image: "docker.io/redis:6.2-alpine@sha256:eaba718fecd1196d88533de7ba49bf903ad33664a92debb24660a922ecd9cac8"
+    state: started
+    restart_policy: always
+    networks:
+      - name: immich_network
+
+- name: Pull the Immich Docker image
+  docker_image:
+    name: "ghcr.io/immich-app/immich-server:release"
+    source: pull
+
+- name: Run Immich container
+  docker_container:
+    name: "immich-server"
+    image: "ghcr.io/immich-app/immich-server:release"
+    state: started
+    restart_policy: always
+    volumes:
+      - /mnt/tmdas/immich/upload:/usr/src/app/upload
+      - /etc/localtime:/etc/localtime:ro
+      - /mnt/tmdas/Photos:/external:ro
+    ports:
+      - "2283:3001"
+    networks:
+      - name: immich_network
+    env:
+      TZ: "Europe/London"
+      DB_HOSTNAME: "immich-postgres"
+      DB_DATABASE_NAME: "immich"
+      DB_USERNAME: "immich"
+      DB_PASSWORD: "{{ immich_password }}"
+      REDIS_HOSTNAME: "immich-redis"
+
+- name: Pull the Immich machine learning image
+  docker_image:
+    name: "ghcr.io/immich-app/immich-machine-learning:release"
+    source: pull
+
+- name: Run Immich machine learning container
+  docker_container:
+    name: "immich-machine-learning"
+    image: "ghcr.io/immich-app/immich-machine-learning:release"
+    state: started
+    restart_policy: always
+    volumes:
+      - model-cache:/cache
+    networks:
+      - name: immich_network
