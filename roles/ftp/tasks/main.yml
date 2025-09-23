@@ -6,10 +6,18 @@
     group: daniel
     mode: '0755'
 
+- name: Ensure user daniel is in ftp group
+  ansible.builtin.user:
+    name: daniel
+    groups: games
+    append: yes
+  become: yes
+
 - name: Pull FTP server Docker image
   docker_image:
     name: fauria/vsftpd
     source: pull
+    force_source: true
 
 - name: Start FTP container
   docker_container:
@@ -25,5 +33,8 @@
       PASV_ENABLE: "NO"
       WRITE_ENABLE: "YES"
       ANONYMOUS_ENABLE: "NO"
+      FILE_OPEN_MODE: "0660"
+      LOCAL_UMASK: "007"
     state: started
     restart_policy: always
+    recreate: yes
