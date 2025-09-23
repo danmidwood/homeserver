@@ -1,0 +1,30 @@
+- name: Pull the latest Vaultwarden Docker image
+  docker_image:
+    name: "vaultwarden/server:latest"
+    source: pull
+    force_source: true
+
+- name: Create Vaultwarden data directory
+  file:
+    path: /mnt/storage/config/vaultwarden
+    state: directory
+    owner: daniel
+    group: daniel
+    mode: '0755'
+
+- name: Run Vaultwarden container
+  docker_container:
+    name: "vaultwarden"
+    image: "vaultwarden/server:latest"
+    state: started
+    restart_policy: always
+    volumes:
+      - /mnt/storage/config/vaultwarden:/data
+    env:
+      WEBSOCKET_ENABLED: "true"
+      SIGNUPS_ALLOWED: "false"
+      ADMIN_TOKEN: "{{ vaultwarden_admin_token }}"
+      DOMAIN: "https://passwords.home.danmidwood.com"
+    networks:
+      - name: caddy_network
+    recreate: yes
