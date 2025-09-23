@@ -1,0 +1,59 @@
+- name: Pull the latest Caddy Docker image
+  docker_image:
+    name: "caddy:latest"
+    source: pull
+    force_source: true
+
+- name: Create Caddy Docker network
+  docker_network:
+    name: caddy_network
+
+- name: Create Caddy root directory
+  file:
+    path: /mnt/storage/config/caddy
+    state: directory
+    owner: daniel
+    group: daniel
+    mode: '0755'
+
+- name: Create Caddy data directory
+  file:
+    path: /mnt/storage/config/caddy/data
+    state: directory
+    owner: daniel
+    group: daniel
+    mode: '0755'
+
+- name: Create Caddy config directory
+  file:
+    path: /mnt/storage/config/caddy/config
+    state: directory
+    owner: daniel
+    group: daniel
+    mode: '0755'
+
+- name: Put Caddy config in place
+  copy:
+    dest: /mnt/storage/config/caddy/Caddyfile
+    content: |
+      budget.home.danmidwood.com {
+        reverse_proxy actual_budget:5006
+      }
+
+- name: Run Caddy container
+  docker_container:
+    name: "caddy"
+    image: "caddy:latest"
+    state: started
+    restart_policy: always
+    volumes:
+      - /mnt/storage/config/caddy/Caddyfile:/etc/caddy/Caddyfile
+      - /mnt/storage/config/caddy/data:/data
+      - /mnt/storage/config/caddy/config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    recreate: yes
+    networks:
+      - name: caddy_network
+

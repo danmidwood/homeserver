@@ -21,6 +21,6 @@
     restart_policy: always
     volumes:
       - /mnt/storage/config/actual-budget/data:/data
-    ports:
-      - "5006:5006"
     recreate: yes
+    networks:
+      - name: caddy_network

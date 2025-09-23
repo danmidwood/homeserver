@@ -12,6 +12,7 @@
     - disks
     - makemkv
     - docker
+    - caddy
     - plex
     - grafana
     - portainer
