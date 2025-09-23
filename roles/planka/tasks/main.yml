@@ -2,6 +2,7 @@
   docker_image:
     name: "ghcr.io/plankanban/planka:latest"
     source: pull
+    force_source: true
 
 - name: Pull the 16-alpine Postgres Docker image
   docker_image:
@@ -47,3 +48,4 @@
       DEFAULT_ADMIN_EMAIL: danieljamesmidwood@gmail.com
       DEFAULT_ADMIN_NAME: Daniel Midwood
       DEFAULT_ADMIN_USERNAME: daniel
+    recreate: true

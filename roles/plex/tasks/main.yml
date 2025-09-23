@@ -24,6 +24,7 @@
   docker_image:
     name: "plexinc/pms-docker:latest"
     source: pull
+    force_source: true
 
 - name: Run Plex container
   docker_container:
@@ -45,3 +46,4 @@
       - /mnt/tmdas/video:/data
     env:
       PLEX_CLAIM: claim-sLM9Es5f6-xLU-sdubWs # Replace this one new system init
+    recreate: true

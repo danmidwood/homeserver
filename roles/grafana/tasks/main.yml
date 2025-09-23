@@ -2,6 +2,7 @@
   docker_image:
     name: "grafana/grafana:latest"
     source: pull
+    force_source: true
 
 - name: Run Grafana container
   docker_container:
@@ -13,3 +14,4 @@
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+    recreate: yes
