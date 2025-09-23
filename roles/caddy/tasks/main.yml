@@ -40,6 +40,30 @@
         reverse_proxy actual_budget:5006
       }
 
+      plex.home.danmidwood.com {
+        reverse_proxy plex:32400
+      }
+
+      grafana.home.danmidwood.com {
+        reverse_proxy grafana:3000
+      }
+
+      photos.home.danmidwood.com {
+        reverse_proxy immich-server:2283
+      }
+
+      books.home.danmidwood.com {
+        reverse_proxy kavita:5000
+      }
+
+      projectboard.home.danmidwood.com {
+        reverse_proxy planka:1337
+      }
+
+      sandbox.home.danmidwood.com {
+        reverse_proxy portainer:9000
+      }
+
 - name: Run Caddy container
   docker_container:
     name: "caddy"

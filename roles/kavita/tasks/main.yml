@@ -16,8 +16,8 @@
     image: "linuxserver/kavita:latest"
     state: started
     restart_policy: always
-    ports:
-      - "5000:5000"
+    networks:
+      - name: caddy_network
     volumes:
       - kavita_config:/config
       - /mnt/tmdas/Books:/books

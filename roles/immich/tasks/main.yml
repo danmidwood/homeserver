@@ -56,9 +56,8 @@
       - /mnt/tmdas/immich/upload:/usr/src/app/upload
       - /etc/localtime:/etc/localtime:ro
       - /mnt/tmdas/Photos:/external:ro
-    ports:
-      - "2283:2283"
     networks:
+      - name: caddy_network
       - name: immich_network
     env:
       TZ: "Europe/London"

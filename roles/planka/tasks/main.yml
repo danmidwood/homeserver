@@ -37,10 +37,9 @@
       - /mnt/storage/config/planka/user-avatars:/app/public/user-avatars
       - /mnt/storage/config/planka/project-background-images:/app/public/project-background-images
       - /mnt/storage/config/planka/attachments:/app/private/attachments
-    ports:
-      - "1337:1337"
     networks:
       - name: planka_network
+      - name: caddy_network
     env_file: /mnt/storage/config/planka/.env
     env:
       BASE_URL: http://xps.fritz.box:1337

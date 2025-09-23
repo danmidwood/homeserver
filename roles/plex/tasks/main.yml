@@ -44,6 +44,8 @@
     volumes:
       - /mnt/storage/config/plex:/config
       - /mnt/tmdas/video:/data
+    networks:
+      - name: caddy_network
     env:
       PLEX_CLAIM: claim-sLM9Es5f6-xLU-sdubWs # Replace this one new system init
     recreate: true
