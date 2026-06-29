@@ -42,7 +42,7 @@
       - name: caddy_network
     env_file: /mnt/storage/config/planka/.env
     env:
-      BASE_URL: http://xps.fritz.box:1337
+      BASE_URL: https://projectboard.home.danmidwood.com
       DATABASE_URL: postgresql://postgres@planka-postgres/planka
       DEFAULT_ADMIN_EMAIL: danieljamesmidwood@gmail.com
       DEFAULT_ADMIN_NAME: Daniel Midwood
