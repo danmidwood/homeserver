@@ -60,10 +60,6 @@
         reverse_proxy planka:1337
       }
 
-      sandbox.home.danmidwood.com {
-        reverse_proxy portainer:9000
-      }
-
       passwords.home.danmidwood.com {
         reverse_proxy vaultwarden:80
       }
