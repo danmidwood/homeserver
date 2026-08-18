@@ -1,0 +1,16 @@
+#!/bin/bash
+set -euo pipefail
+
+DUMP_DIR=/mnt/storage/backup/db-dumps
+
+docker exec planka-postgres pg_dump -U postgres planka > "${DUMP_DIR}/planka.sql"
+docker exec -e PGPASSWORD="{{ immich_db_password }}" immich-postgres pg_dump -U immich immich > "${DUMP_DIR}/immich.sql"
+
+# The B2 key used here has no delete capability (ransomware protection - see README),
+# so this only ever adds snapshots. Pruning old ones requires the admin key kept off-server.
+restic backup \
+{% for path in backup_paths %}
+  "{{ path }}" \
+{% endfor %}
+  --exclude-caches \
+  --tag automated

@@ -1,0 +1,84 @@
+- name: Ensure B2 backup credentials are configured
+  ansible.builtin.assert:
+    that:
+      - backup_b2_bucket | default('') | length > 0
+      - backup_b2_endpoint | default('') | length > 0
+      - backup_b2_key_id | default('') | length > 0
+      - backup_b2_application_key | default('') | length > 0
+      - backup_restic_password | default('') | length > 0
+    fail_msg: "backup_b2_bucket, backup_b2_endpoint, backup_b2_key_id, backup_b2_application_key and backup_restic_password must all be set in user_passwords.yml"
+
+- name: Install restic
+  pacman:
+    name: restic
+    state: present
+
+- name: Create restic credentials directory
+  file:
+    path: /etc/restic
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Template restic environment file
+  template:
+    src: restic.env.j2
+    dest: /etc/restic/env
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Create database dump staging directory
+  file:
+    path: /mnt/storage/backup/db-dumps
+    state: directory
+    owner: daniel
+    group: daniel
+    mode: '0755'
+
+- name: Template backup script
+  template:
+    src: restic-backup.sh.j2
+    dest: /usr/local/bin/restic-backup.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install restic systemd service
+  copy:
+    src: restic-backup.service
+    dest: /etc/systemd/system/restic-backup.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd
+
+- name: Install restic systemd timer
+  copy:
+    src: restic-backup.timer
+    dest: /etc/systemd/system/restic-backup.timer
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd
+
+- name: Flush handlers so systemd sees new units before enabling
+  meta: flush_handlers
+
+- name: Enable and start the restic backup timer
+  systemd:
+    name: restic-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Initialise restic repository if not already initialised
+  ansible.builtin.shell: |
+    set -a
+    . /etc/restic/env
+    set +a
+    restic snapshots >/dev/null 2>&1 || restic init
+  args:
+    executable: /bin/bash
+  changed_when: false

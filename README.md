@@ -6,6 +6,7 @@ This is my config to set up a Dell XPS 9360 as a home server.
 
 ### Prep on dev laptop
 
+* Install ansible collection requirements: `ansible-galaxy collection install -r requirements.yml`
 * Download an Arch linux ISO
 * Run `./mkiso.sh $path_to_arch_iso`
 * Write the iso to a usb pen drive with `sudo dd if=./archlinux-xxx.install_script.iso_ of=/path/to/usb/device bs=4M status=progress`

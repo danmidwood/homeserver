@@ -1,0 +1,12 @@
+backup_retention_daily: 14
+backup_retention_weekly: 8
+backup_retention_monthly: 12
+
+backup_paths:
+  - /mnt/storage/backup/db-dumps
+  - /mnt/storage/config/actual-budget/data
+  - /mnt/storage/config/vaultwarden
+  - /mnt/storage/config/planka/user-avatars
+  - /mnt/storage/config/planka/project-background-images
+  - /mnt/storage/config/planka/attachments
+  - /mnt/tmdas/immich/upload
