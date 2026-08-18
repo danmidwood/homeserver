@@ -1,16 +1,16 @@
 - name: Create Immich Docker network
-  docker_network:
+  community.docker.docker_network:
     name: immich_network
 
 - name: Pull vector search Postgres Docker image
-  docker_image:
+  community.docker.docker_image_pull:
     name: "docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:90724186f0a3517cf6914295b5ab410db9ce23190a2d9d0b9dd6463e3fa298f0"
-    source: pull
+    pull: not_present
 
 - name: Run Postgres container
-  docker_container:
+  community.docker.docker_container:
     name: "immich-postgres"
-    image: "ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0"
+    image: "ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:41eacbe83eca995561fe43814fd4891e16e39632806253848efaf04d3c8a8b84"
     state: started
     restart_policy: always
     volumes:
@@ -24,15 +24,14 @@
     networks:
       - name: immich_network
     shm_size: 128MB
-    restart: true
 
 - name: Pull the Immich Redis container
-  docker_image:
+  community.docker.docker_image_pull:
     name: "docker.io/redis:6.2-alpine@sha256:eaba718fecd1196d88533de7ba49bf903ad33664a92debb24660a922ecd9cac8"
-    source: pull
+    pull: not_present
 
 - name: Run the Immich Redis container
-  docker_container:
+  community.docker.docker_container:
     name: "immich-redis"
     image: "docker.io/redis:6.2-alpine@sha256:eaba718fecd1196d88533de7ba49bf903ad33664a92debb24660a922ecd9cac8"
     state: started
@@ -41,15 +40,14 @@
       - name: immich_network
 
 - name: Pull the Immich Docker image
-  docker_image:
-    name: "ghcr.io/immich-app/immich-server:release"
-    source: pull
-    force_source: true
+  community.docker.docker_image_pull:
+    name: "ghcr.io/immich-app/immich-server:v3.1.0@sha256:b434cb9287eea1471c9974845914d4dd328c9c2d652e446ed4930f99944f0ceb"
+    pull: not_present
 
 - name: Run Immich container
-  docker_container:
+  community.docker.docker_container:
     name: "immich-server"
-    image: "ghcr.io/immich-app/immich-server:release"
+    image: "ghcr.io/immich-app/immich-server:v3.1.0@sha256:b434cb9287eea1471c9974845914d4dd328c9c2d652e446ed4930f99944f0ceb"
     state: started
     restart_policy: always
     volumes:
@@ -66,22 +64,19 @@
       DB_USERNAME: "immich"
       DB_PASSWORD: "{{ immich_db_password }}"
       REDIS_HOSTNAME: "immich-redis"
-    recreate: yes
 
 - name: Pull the Immich machine learning image
-  docker_image:
-    name: "ghcr.io/immich-app/immich-machine-learning:release"
-    source: pull
-    force_source: true
+  community.docker.docker_image_pull:
+    name: "ghcr.io/immich-app/immich-machine-learning:v3.1.0@sha256:5a0839dc5303cd7215bcd2180a26aed3af41675aefb3e75e5157e9f10ad16e6e"
+    pull: not_present
 
 - name: Run Immich machine learning container
-  docker_container:
+  community.docker.docker_container:
     name: "immich-machine-learning"
-    image: "ghcr.io/immich-app/immich-machine-learning:release"
+    image: "ghcr.io/immich-app/immich-machine-learning:v3.1.0@sha256:5a0839dc5303cd7215bcd2180a26aed3af41675aefb3e75e5157e9f10ad16e6e"
     state: started
     restart_policy: always
     volumes:
       - model-cache:/cache
     networks:
       - name: immich_network
-    recreate: yes

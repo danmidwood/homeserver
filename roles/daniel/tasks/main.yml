@@ -11,9 +11,10 @@
   ansible.builtin.user:
     name: daniel
     groups: wheel
+    append: true
     shell: /bin/zsh
     state: present
-    password: "{{ daniel_password | password_hash('sha512') }}"
+    password: "{{ daniel_password | password_hash('sha512', daniel_password_salt) }}"
 
 - name: Ensure wheel group is in the sudoers list
   ansible.builtin.lineinfile:
@@ -46,6 +47,7 @@
     src: /home/daniel/.oh-my-zsh/templates/zshrc.zsh-template
     dest: /home/daniel/.zshrc
     remote_src: yes
+    force: no
     owner: daniel
     group: daniel
     mode: '0644'

@@ -4,16 +4,15 @@
       - python-requests
     state: present
 
-- name: Pull the latest Kavita Docker image
-  docker_image:
-    name: "linuxserver/kavita:latest"
-    source: pull
-    force_source: true
+- name: Pull the Kavita Docker image
+  community.docker.docker_image_pull:
+    name: "linuxserver/kavita:v0.9.0.2-ls120@sha256:7e3be67100797e264756e9a1a9c6dd821c5dc0950b7940a645a629a429831118"
+    pull: not_present
 
 - name: Run Kavita container
-  docker_container:
+  community.docker.docker_container:
     name: "kavita"
-    image: "linuxserver/kavita:latest"
+    image: "linuxserver/kavita:v0.9.0.2-ls120@sha256:7e3be67100797e264756e9a1a9c6dd821c5dc0950b7940a645a629a429831118"
     state: started
     restart_policy: always
     networks:
@@ -25,4 +24,3 @@
       TZ: "Europe/London"
       PUID: "1000"
       GUID: "1000"
-    recreate: true

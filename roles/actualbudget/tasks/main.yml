@@ -1,8 +1,7 @@
-- name: Pull the latest Actual Budget Docker image
-  docker_image:
-    name: "actualbudget/actual-server:latest"
-    source: pull
-    force_source: true
+- name: Pull the Actual Budget Docker image
+  community.docker.docker_image_pull:
+    name: "actualbudget/actual-server:26.8.1@sha256:6478d9ddfc0924479c09e6699c205e354c6f2216dfe7de3c0fb7b590d6edcdc5"
+    pull: not_present
 
 - name: Create Actual Budget data directory
   file:
@@ -14,13 +13,12 @@
 
 
 - name: Run Actual Budget container
-  docker_container:
+  community.docker.docker_container:
     name: "actual_budget"
-    image: "actualbudget/actual-server:latest"
+    image: "actualbudget/actual-server:26.8.1@sha256:6478d9ddfc0924479c09e6699c205e354c6f2216dfe7de3c0fb7b590d6edcdc5"
     state: started
     restart_policy: always
     volumes:
       - /mnt/storage/config/actual-budget/data:/data
-    recreate: yes
     networks:
       - name: caddy_network

@@ -5,8 +5,4 @@
     create: yes
     backup: yes
     line: 'HandleLidSwitchExternalPower=ignore'
-
-- name: Restart systemd-logind to apply changes
-  systemd:
-    name: systemd-logind
-    state: restarted
+  notify: Restart systemd-logind

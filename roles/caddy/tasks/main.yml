@@ -1,11 +1,10 @@
-- name: Pull the latest Caddy Docker image
-  docker_image:
-    name: "caddy:latest"
-    source: pull
-    force_source: true
+- name: Pull the Caddy Docker image
+  community.docker.docker_image_pull:
+    name: "caddy:2.11.4@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9"
+    pull: not_present
 
 - name: Create Caddy Docker network
-  docker_network:
+  community.docker.docker_network:
     name: caddy_network
 
 - name: Create Caddy root directory
@@ -65,9 +64,9 @@
       }
 
 - name: Run Caddy container
-  docker_container:
+  community.docker.docker_container:
     name: "caddy"
-    image: "caddy:latest"
+    image: "caddy:2.11.4@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9"
     state: started
     restart_policy: always
     volumes:
@@ -77,7 +76,5 @@
     ports:
       - "80:80"
       - "443:443"
-    recreate: yes
     networks:
       - name: caddy_network
-

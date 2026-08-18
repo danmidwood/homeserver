@@ -1,22 +1,21 @@
-- name: Pull the latest Planka Docker image
-  docker_image:
-    name: "ghcr.io/plankanban/planka:latest"
-    source: pull
-    force_source: true
+- name: Pull the Planka Docker image
+  community.docker.docker_image_pull:
+    name: "ghcr.io/plankanban/planka:1.26.3@sha256:e469d724985db3f560ef0aa2218d54536212459bf8ecbdbc9fd995fc3cbe29db"
+    pull: not_present
 
 - name: Pull the 16-alpine Postgres Docker image
-  docker_image:
-    name: "postgres:16-alpine"
-    source: pull
+  community.docker.docker_image_pull:
+    name: "postgres:16-alpine@sha256:d898b0b78a2627cb4ee63464a14efc9d296884f1b28c841b0ab7d7c42f1fffdf"
+    pull: not_present
 
 - name: Create Docker network
-  docker_network:
+  community.docker.docker_network:
     name: planka_network
 
 - name: Run Postgres container
-  docker_container:
+  community.docker.docker_container:
     name: "planka-postgres"
-    image: "postgres:16-alpine"
+    image: "postgres:16-alpine@sha256:d898b0b78a2627cb4ee63464a14efc9d296884f1b28c841b0ab7d7c42f1fffdf"
     state: started
     restart_policy: always
     volumes:
@@ -28,9 +27,9 @@
       - name: planka_network
 
 - name: Run Planka container
-  docker_container:
+  community.docker.docker_container:
     name: "planka"
-    image: "ghcr.io/plankanban/planka:latest"
+    image: "ghcr.io/plankanban/planka:1.26.3@sha256:e469d724985db3f560ef0aa2218d54536212459bf8ecbdbc9fd995fc3cbe29db"
     state: started
     restart_policy: always
     volumes:
@@ -47,4 +46,3 @@
       DEFAULT_ADMIN_EMAIL: danieljamesmidwood@gmail.com
       DEFAULT_ADMIN_NAME: Daniel Midwood
       DEFAULT_ADMIN_USERNAME: daniel
-    recreate: true

@@ -1,8 +1,7 @@
-- name: Pull the latest Vaultwarden Docker image
-  docker_image:
-    name: "vaultwarden/server:latest"
-    source: pull
-    force_source: true
+- name: Pull the Vaultwarden Docker image
+  community.docker.docker_image_pull:
+    name: "vaultwarden/server:1.37.1@sha256:ebdfe70701c60ac0c28c697e787cea767d7972940b786037b29fe0d507f821e8"
+    pull: not_present
 
 - name: Create Vaultwarden data directory
   file:
@@ -13,9 +12,9 @@
     mode: '0755'
 
 - name: Run Vaultwarden container
-  docker_container:
+  community.docker.docker_container:
     name: "vaultwarden"
-    image: "vaultwarden/server:latest"
+    image: "vaultwarden/server:1.37.1@sha256:ebdfe70701c60ac0c28c697e787cea767d7972940b786037b29fe0d507f821e8"
     state: started
     restart_policy: always
     volumes:
@@ -27,4 +26,3 @@
       DOMAIN: "https://passwords.home.danmidwood.com"
     networks:
       - name: caddy_network
-    recreate: yes

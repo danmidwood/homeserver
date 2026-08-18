@@ -1,2 +1,5 @@
 collections:
   - name: kewlfft.aur
+  - name: community.docker
+  - name: community.general
+  - name: ansible.posix

@@ -20,16 +20,15 @@
 #     group: nobody
 #     mode: '0755'
 
-- name: Pull the latest Plex Docker image
-  docker_image:
-    name: "plexinc/pms-docker:latest"
-    source: pull
-    force_source: true
+- name: Pull the Plex Docker image
+  community.docker.docker_image_pull:
+    name: "plexinc/pms-docker:1.43.3.10896-cb3ebc72d@sha256:83a425ae9e133b1cb2cc3b809556e01c61cd8ff65c582e41b4374bc2210bac9e"
+    pull: not_present
 
 - name: Run Plex container
-  docker_container:
+  community.docker.docker_container:
     name: "plex"
-    image: "plexinc/pms-docker:latest"
+    image: "plexinc/pms-docker:1.43.3.10896-cb3ebc72d@sha256:83a425ae9e133b1cb2cc3b809556e01c61cd8ff65c582e41b4374bc2210bac9e"
     state: started
     restart_policy: always
     ports:
@@ -48,4 +47,3 @@
       - name: caddy_network
     env:
       PLEX_CLAIM: claim-sLM9Es5f6-xLU-sdubWs # Replace this one new system init
-    recreate: true

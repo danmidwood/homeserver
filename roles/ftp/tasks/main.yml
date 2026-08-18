@@ -14,15 +14,14 @@
   become: yes
 
 - name: Pull FTP server Docker image
-  docker_image:
-    name: fauria/vsftpd
-    source: pull
-    force_source: true
+  community.docker.docker_image_pull:
+    name: "fauria/vsftpd:latest@sha256:6d71d7c7f1b0ab2844ec7dc7999a30aef6d758b6d8179cf5967513f87c79c177"
+    pull: not_present
 
 - name: Start FTP container
-  docker_container:
+  community.docker.docker_container:
     name: ftp_server
-    image: fauria/vsftpd
+    image: "fauria/vsftpd:latest@sha256:6d71d7c7f1b0ab2844ec7dc7999a30aef6d758b6d8179cf5967513f87c79c177"
     ports:
       - "21:21"
     volumes:
@@ -37,4 +36,3 @@
       LOCAL_UMASK: "007"
     state: started
     restart_policy: always
-    recreate: yes

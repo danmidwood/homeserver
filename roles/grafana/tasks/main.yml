@@ -1,17 +1,18 @@
-- name: Pull the latest Grafana Docker image
-  docker_image:
-    name: "grafana/grafana:latest"
-    source: pull
-    force_source: true
+- name: Pull the Grafana Docker image
+  community.docker.docker_image_pull:
+    name: "grafana/grafana:13.2.0@sha256:3fd54ae1214669f8355f065ec9f6445d5279a3d77095ab048ca045685272429b"
+    pull: not_present
 
 - name: Run Grafana container
-  docker_container:
+  community.docker.docker_container:
     name: "grafana"
-    image: "grafana/grafana:latest"
+    image: "grafana/grafana:13.2.0@sha256:3fd54ae1214669f8355f065ec9f6445d5279a3d77095ab048ca045685272429b"
     state: started
     restart_policy: always
     networks:
       - name: caddy_network
     volumes:
       - grafana_data:/var/lib/grafana
-    recreate: yes
+    env:
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
