@@ -10,3 +10,7 @@ backup_paths:
   - /mnt/storage/config/planka/project-background-images
   - /mnt/storage/config/planka/attachments
   - /mnt/tmdas/immich/upload
+  - /mnt/tmdas/Books
+  - /mnt/tmdas/Documents
+  - /mnt/tmdas/Dev
+  - /mnt/tmdas/Piano
