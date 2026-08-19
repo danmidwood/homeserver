@@ -959,7 +959,6 @@ Replace the entire contents of `roles/prometheus/tasks/main.yml`:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
-      - "--web.enable-lifecycle"
 ```
 
 Replace `roles/prometheus/handlers/main.yml`:
@@ -1208,7 +1207,7 @@ untouched, so the next Ansible run restores the real threshold:
 ssh daniel@xps.fritz.box \
   'sudo sed -i "s|node_memory_MemTotal_bytes < 0.10|node_memory_MemTotal_bytes < 0.99|" \
      /mnt/storage/config/prometheus/rules/host.yml && \
-   curl -s -X POST http://localhost:9090/-/reload'
+   docker kill -s HUP prometheus'
 ```
 
 Expected: within roughly 15 minutes plus the 30-second group wait, a ⚠️ WARNING Telegram message for `MemoryPressure`.
