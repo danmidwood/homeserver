@@ -12,3 +12,64 @@ groups:
         annotations:
           summary: "{{ $labels.mountpoint }} has under 5% free"
           description: "{{ $labels.mountpoint }} on {{ $labels.instance }} is at {{ $value | humanizePercentage }} free."
+
+      - alert: FilesystemReadOnly
+        expr: node_filesystem_readonly{fstype!~"tmpfs|ramfs|overlay|squashfs"} == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.mountpoint }} has gone read-only"
+          description: "A filesystem remounting itself read-only is usually the first visible sign of a failing disk. Check dmesg on {{ $labels.instance }}."
+
+      - alert: DiskSpaceLow
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|overlay|squashfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|ramfs|overlay|squashfs"}
+            < 0.15
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.mountpoint }} has under 15% free"
+          description: "{{ $labels.mountpoint }} on {{ $labels.instance }} is at {{ $value | humanizePercentage }} free."
+
+      - alert: DiskWillFillSoon
+        expr: |
+          predict_linear(
+            node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|overlay|squashfs"}[6h],
+            4 * 24 * 3600
+          ) < 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.mountpoint }} is projected to fill within 4 days"
+          description: "Based on the last 6 hours of usage, {{ $labels.mountpoint }} on {{ $labels.instance }} runs out of space within 4 days."
+
+      - alert: MemoryPressure
+        expr: |
+          node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Under 10% memory available"
+          description: "{{ $labels.instance }} has {{ $value | humanizePercentage }} of memory available."
+
+      - alert: CPUThermalThrottle
+        expr: node_hwmon_temp_celsius > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU running at {{ $value }}C"
+          description: "The server is a laptop; sustained high temperature suggests blocked airflow or a failing fan."
+
+      - alert: HostRebooted
+        expr: (node_time_seconds - node_boot_time_seconds) < 300
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.instance }} rebooted"
+          description: "Uptime is under five minutes. A server that reboots on its own is worth knowing about."
