@@ -1,0 +1,18 @@
+apiVersion: 1
+
+# Removes any hand-created datasource of the same name first; provisioning
+# fails outright if a datasource with this name already exists under a
+# different uid, which it will, because this one was created by hand.
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    orgId: 1
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

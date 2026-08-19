@@ -3,6 +3,23 @@
     name: "grafana/grafana:13.2.0@sha256:3fd54ae1214669f8355f065ec9f6445d5279a3d77095ab048ca045685272429b"
     pull: not_present
 
+- name: Create Grafana datasource provisioning directory
+  ansible.builtin.file:
+    path: /mnt/storage/config/grafana/provisioning/datasources
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Provision the Prometheus datasource
+  ansible.builtin.copy:
+    src: datasource-prometheus.yml
+    dest: /mnt/storage/config/grafana/provisioning/datasources/prometheus.yml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Grafana
+
 - name: Run Grafana container
   community.docker.docker_container:
     name: "grafana"
@@ -13,6 +30,7 @@
       - name: caddy_network
     volumes:
       - grafana_data:/var/lib/grafana
+      - /mnt/storage/config/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
     env:
       GF_SECURITY_ADMIN_USER: "admin"
       GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
