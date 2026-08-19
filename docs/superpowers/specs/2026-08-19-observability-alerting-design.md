@@ -390,6 +390,12 @@ demonstrated value here.
 
 Each check is performed as the increment that enables it lands.
 
+Prerequisite, easily missed: the bot must be sent a message by hand before
+Alertmanager can ever deliver to it. Telegram bots cannot initiate a
+conversation, so until `/start` has been sent to the bot from the target
+account, delivery fails with "chat not found" despite a valid token and chat
+id. For a private chat the chat id is simply the recipient's Telegram user id.
+
 1. `amtool alert add` a synthetic alert, confirm arrival in Telegram. Proves
    the delivery chain before any rule exists.
 2. Stop a container by hand; confirm `ContainerMissing` fires, then start it
