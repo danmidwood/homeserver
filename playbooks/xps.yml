@@ -15,6 +15,7 @@
     - caddy
     - plex
     - alertmanager
+    - prometheus
     - grafana
     - portainer
     - kavita

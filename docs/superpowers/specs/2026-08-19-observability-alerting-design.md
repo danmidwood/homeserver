@@ -86,8 +86,8 @@ Its job is measuring the host. Containerising it means bind-mounting `/proc`,
 package under systemd.
 
 This leaves exactly one host/container crossing: the Prometheus container
-scraping node-exporter on the host, handled with
-`extra_hosts: host.docker.internal:host-gateway` and a scrape target in
+scraping node-exporter on the host, handled with Ansible's `etc_hosts`
+(`host.docker.internal:host-gateway`) and a scrape target in
 `prometheus.yml`. That crossing is declared in a file in this repository,
 which is the property that matters.
 
@@ -185,13 +185,13 @@ and does not affect any other part of this design.
 
 | Alert | Condition | Severity |
 |---|---|---|
-| `FilesystemReadOnly` | `node_filesystem_readonly == 1` — usually the first visible sign of a failing disk | critical |
+| `FilesystemReadOnly` | `node_filesystem_readonly == 1` (excluding pseudo-filesystems by `fstype`) for 5m — usually the first visible sign of a failing disk | critical |
 | `DiskSpaceCritical` | under 5% free for 15m | critical |
 | `DiskSpaceLow` | under 15% free for 1h | warning |
 | `VarSpaceCritical` | under 15% free on `/var` for 1h | critical |
 | `DiskWillFillSoon` | `predict_linear(node_filesystem_avail_bytes[6h], 4*24*3600) < 0` | warning |
 | `MemoryPressure` | under 10% `MemAvailable` for 15m | warning |
-| `CPUThermalThrottle` | package temperature over 85°C for 10m — the server is a laptop | warning |
+| `CPUThermalThrottle` | over 85°C for 10m on any sensor under `chip="platform_coretemp_0"` — package and per-core alike, since the server is a laptop | warning |
 | `HostRebooted` | uptime under 5m — a server that reboots by itself is news | info |
 
 The disk rules watch every real filesystem rather than an enumerated list, so a
@@ -271,7 +271,7 @@ the container is up and healthy but the application inside is wedged.
 
 | Alert | Condition | Severity |
 |---|---|---|
-| `TargetDown` | `up == 0` for 10m — how cAdvisor or blackbox dying gets noticed | warning |
+| `TargetDown` | `up == 0` for 10m — how a dead scrape target gets noticed. Ships in increment 1, in `host.yml`, covering `node` and `prometheus`; cAdvisor and blackbox join the same rule once increments 4 and 5 add them as targets | warning |
 | `Watchdog` | always firing, by construction | n/a |
 
 `Watchdog` is the dead-man's-switch. It is routed to a webhook receiver that
@@ -379,10 +379,19 @@ inspecting a working system.
 
 ### Configuration validation
 
-`promtool check config` and `promtool check rules` against the rendered
-Prometheus configuration; `amtool check-config` against Alertmanager's. Both
-catch the class of error where the service starts successfully and then
-quietly does nothing.
+`promtool check rules`, `promtool test rules` and `promtool check config`
+against `prometheus.yml.j2` all run in `tests/run-promtool.sh`, since that
+template contains no Jinja and is valid promtool input as-is. These catch the
+class of error where the service starts successfully and then quietly does
+nothing.
+
+`amtool check-config` against Alertmanager's configuration does not run in
+that harness. `alertmanager.yml.j2` is a Jinja template containing secrets
+(`heartbeat_ping_url`, `telegram_chat_id`), so only its rendered form on the
+server is a real Alertmanager config to check — there is nothing valid to
+check locally. This is what actually happened during deployment: `amtool
+check-config` was run against the rendered file on the server, not added to
+the local harness.
 
 ### Where tests run
 
@@ -426,7 +435,7 @@ Six increments, each independently useful and independently revertable.
 
 | # | Increment | New services |
 |---|---|---|
-| 1 | Prometheus containerised, Alertmanager, Telegram receiver, host health rules, Watchdog and heartbeat | Prometheus (replaced), Alertmanager — delivered 2026-08-19 |
+| 1 | Prometheus containerised, Alertmanager, Telegram receiver, host health rules, `TargetDown`, Watchdog and heartbeat | Prometheus (replaced), Alertmanager — delivered 2026-08-19 |
 | 2 | Backup integrity: textfile collector, staleness rules, `OnFailure=` handler | none |
 | 3 | Disk health: smartmontools, textfile script and timer, SMART rules | none |
 | 4 | Container health: cAdvisor and rules | cAdvisor |
@@ -445,13 +454,34 @@ expendable.
 
 ## Known gaps
 
-- **Alertmanager cannot report its own death.** Prometheus can detect it via
-  `TargetDown` but has no way to deliver that alert. The Watchdog covers this
-  from outside, which is why it is in increment 1 rather than deferred.
+- **Alertmanager cannot report its own death.** It is not a Prometheus scrape
+  target, so `TargetDown` cannot see it either — the off-box Watchdog
+  heartbeat to Healthchecks.io is the only thing that covers this, which is
+  why it is in increment 1 rather than deferred.
 - **The restic repository is never pruned.** Out of scope here, but it will
   eventually cost real money and needs addressing separately.
 - **No log aggregation.** Alerts will say a container is restart-looping but
   not why; diagnosis still means SSH and `docker logs`.
+- **No clock-drift alert**, though node-exporter already exports
+  `node_timex_sync_status` and a rule could be added cheaply.
+- **`instance` renders as `host.docker.internal:9100`** in every host alert,
+  which means nothing to a human reader; fixable with `relabel_configs` on
+  the `node` scrape job, at which point the test fixtures should be updated
+  to match that reality instead of using `xps.fritz.box:9100`, a value
+  production never actually produces.
+- **A missing or typo'd `severity` label routes to the default Telegram
+  receiver**, which is `telegram-warning`, so a future rule that gets its
+  severity wrong is delivered silently mislabelled as WARNING rather than
+  being obviously misrouted or dropped.
+- **Grafana dashboards are not in version control.** A fresh host comes up
+  with a working Prometheus datasource and no dashboards to look at.
+- **`/var` under 5% free double-fires.** It satisfies both `DiskSpaceCritical`
+  (which does not exclude `/var`) and `VarSpaceCritical`, so one condition
+  sends two Telegram messages.
+- **`heartbeat_ping_url` and `telegram_chat_id` are rendered without
+  `no_log`** in `roles/alertmanager/tasks/main.yml`'s "Template Alertmanager
+  configuration" task, so they can appear in `--diff` or `-v` output even
+  though the bot token itself is protected.
 
 ## Phase 2: inbound Telegram bot
 

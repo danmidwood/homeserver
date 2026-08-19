@@ -85,3 +85,12 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} rebooted"
           description: "Uptime is under five minutes. A server that reboots on its own is worth knowing about."
+
+      - alert: TargetDown
+        expr: up == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} target {{ $labels.instance }} is down"
+          description: "Prometheus has not been able to scrape {{ $labels.instance }} for over 10 minutes. Every other rule that depends on metrics from this target has stopped evaluating and gone silent as a result — that silence does not mean things are healthy, it means nothing is being checked."

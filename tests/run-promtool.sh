@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Validates and unit-tests the Prometheus alert rules.
-# Uses a local promtool if one is installed, otherwise runs the pinned
-# Prometheus image so the tool version matches what is deployed.
+# Always runs promtool from the pinned Prometheus image, never a local
+# `promtool` on PATH, so the tool version matches what is deployed exactly.
+# A stale Homebrew build silently used instead would defeat the point of
+# pinning.
 set -euo pipefail
 
 # Docker Desktop on macOS does not put its CLI on the default PATH. Prepend
@@ -16,16 +18,22 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 cd "$REPO_ROOT"
 
-if command -v promtool >/dev/null 2>&1; then
-  promtool_run() { promtool "$@"; }
-else
-  promtool_run() {
-    docker run --rm -v "$REPO_ROOT:/repo" -w /repo --entrypoint promtool "$IMAGE" "$@"
-  }
-fi
+promtool_run() {
+  docker run --rm -v "$REPO_ROOT:/repo" -w /repo --entrypoint promtool "$IMAGE" "$@"
+}
+
+echo "==> Using promtool from pinned image $IMAGE"
+promtool_run --version
 
 echo "==> Checking rule syntax"
 promtool_run check rules roles/prometheus/files/rules/*.yml
+
+echo "==> Checking Prometheus configuration"
+# prometheus.yml.j2 contains no Jinja, so it is valid promtool input as-is.
+# amtool check-config against Alertmanager's config cannot run here: that
+# template is Jinja containing secrets, and only its rendered form on the
+# server can be checked.
+promtool_run check config roles/prometheus/templates/prometheus.yml.j2
 
 echo "==> Running rule unit tests"
 failed=0

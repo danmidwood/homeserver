@@ -238,6 +238,82 @@ tests:
         alertname: CPUThermalThrottle
         exp_alerts: []
 
+  # A disk draining at a steady rate, sitting around 26-28% free (well clear
+  # of DiskSpaceLow's 15% and DiskSpaceCritical's 5%), still projects to run
+  # dry within 4 days on its current trend. DiskWillFillSoon must fire even
+  # though nothing else in the file does.
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+        values: '57200-10x420'
+      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+        values: '200000+0x420'
+    alert_rule_test:
+      - eval_time: 421m
+        alertname: DiskWillFillSoon
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: xps.fritz.box:9100
+              job: node
+              device: /dev/sda2
+              fstype: ext4
+              mountpoint: /mnt/storage
+            exp_annotations:
+              summary: "/mnt/storage is projected to fill within 4 days"
+              description: "Based on the last 6 hours of usage, /mnt/storage on xps.fritz.box:9100 runs out of space within 4 days."
+      - eval_time: 421m
+        alertname: DiskSpaceLow
+        exp_alerts: []
+      - eval_time: 421m
+        alertname: DiskSpaceCritical
+        exp_alerts: []
+
+  # The same disk holding perfectly flat has no trend to extrapolate and must
+  # never fire DiskWillFillSoon, no matter how long it is watched.
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+        values: '57200+0x420'
+      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+        values: '200000+0x420'
+    alert_rule_test:
+      - eval_time: 421m
+        alertname: DiskWillFillSoon
+        exp_alerts: []
+
+  # A dead scrape target means every rule reading from it has gone dark, not
+  # that everything it would have alerted on is fine. TargetDown must fire
+  # once the target has been unreachable for the full for: duration.
+  - interval: 1m
+    input_series:
+      - series: 'up{instance="xps.fritz.box:9100",job="node"}'
+        values: '0+0x15'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: TargetDown
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: xps.fritz.box:9100
+              job: node
+            exp_annotations:
+              summary: "node target xps.fritz.box:9100 is down"
+              description: "Prometheus has not been able to scrape xps.fritz.box:9100 for over 10 minutes. Every other rule that depends on metrics from this target has stopped evaluating and gone silent as a result — that silence does not mean things are healthy, it means nothing is being checked."
+
+  # A target that is up must never fire TargetDown.
+  - interval: 1m
+    input_series:
+      - series: 'up{instance="xps.fritz.box:9100",job="node"}'
+        values: '1+0x15'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: TargetDown
+        exp_alerts: []
+
   # A box that booted two minutes ago is news; one up for days is not.
   - interval: 1m
     input_series:
