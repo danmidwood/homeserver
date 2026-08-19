@@ -22,6 +22,15 @@
     path: /etc/prometheus
     state: absent
 
+- name: Remove the packaged Prometheus data directory
+  # pacman leaves this behind on removal along with the orphaned `prometheus`
+  # system user; the brief calls for the package and its data to go, and this
+  # is the package's other conventional data directory (the user is left
+  # alone deliberately, per pacman convention).
+  ansible.builtin.file:
+    path: /var/lib/prometheus
+    state: absent
+
 - name: Ensure node-exporter is installed
   ansible.builtin.package:
     name: prometheus-node-exporter
@@ -87,6 +96,10 @@
     mode: '0644'
   notify: Restart Prometheus
 
+- name: Discover the current set of Prometheus rule files in the repo
+  ansible.builtin.set_fact:
+    prometheus_rule_basenames: "{{ query('fileglob', role_path + '/files/rules/*.yml') | map('basename') | list }}"
+
 - name: Copy Prometheus alert rules
   ansible.builtin.copy:
     src: "{{ item }}"
@@ -96,6 +109,25 @@
     mode: '0644'
   with_fileglob:
     - "rules/*.yml"
+  notify: Restart Prometheus
+
+- name: Find rule files currently deployed on the server
+  ansible.builtin.find:
+    paths: /mnt/storage/config/prometheus/rules
+    patterns: "*.yml"
+  register: prometheus_deployed_rules
+
+- name: Remove stale Prometheus rule files
+  # A rule file renamed or deleted from the repo must not linger here: Prometheus
+  # would keep loading and evaluating it forever, firing alerts for a rule that
+  # no longer exists in version control, with nothing to signal the drift.
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ prometheus_deployed_rules.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: (item.path | basename) not in prometheus_rule_basenames
   notify: Restart Prometheus
 
 - name: Pull the Prometheus image
@@ -120,6 +152,10 @@
       - /mnt/storage/config/prometheus/rules:/etc/prometheus/rules:ro
       - /mnt/storage/config/prometheus/data:/prometheus
     command:
+      # --web.enable-lifecycle is deliberately omitted: the container publishes
+      # 9090 on 0.0.0.0 unauthenticated and is not behind Caddy, so that flag
+      # would expose POST /-/reload and POST /-/quit to anyone on the LAN, who
+      # could shut Prometheus down. Config/rule reloads use `docker kill -s HUP
+      # prometheus` instead, which reloads identically with no network endpoint.
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
-      - "--web.enable-lifecycle"
