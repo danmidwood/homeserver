@@ -1,0 +1,44 @@
+rule_files:
+  - ../../roles/prometheus/files/rules/host.yml
+
+evaluation_interval: 1m
+
+tests:
+  # 1% free on /mnt/storage, held steady for half an hour.
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+        values: '1000+0x30'
+      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+        values: '100000+0x30'
+    alert_rule_test:
+      # Must NOT fire before the 15m `for:` has elapsed.
+      - eval_time: 10m
+        alertname: DiskSpaceCritical
+        exp_alerts: []
+      # Must fire once it has.
+      - eval_time: 16m
+        alertname: DiskSpaceCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              instance: xps.fritz.box:9100
+              job: node
+              device: /dev/sda2
+              fstype: ext4
+              mountpoint: /mnt/storage
+            exp_annotations:
+              summary: "/mnt/storage has under 5% free"
+              description: "/mnt/storage on xps.fritz.box:9100 is at 1% free."
+
+  # 40% free is healthy and must never fire.
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+        values: '40000+0x30'
+      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+        values: '100000+0x30'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: DiskSpaceCritical
+        exp_alerts: []

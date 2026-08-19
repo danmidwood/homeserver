@@ -1,0 +1,14 @@
+groups:
+  - name: host
+    rules:
+      - alert: DiskSpaceCritical
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|overlay|squashfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|ramfs|overlay|squashfs"}
+            < 0.05
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.mountpoint }} has under 5% free"
+          description: "{{ $labels.mountpoint }} on {{ $labels.instance }} is at {{ $value | humanizePercentage }} free."
