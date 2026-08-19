@@ -186,12 +186,23 @@ and does not affect any other part of this design.
 | Alert | Condition | Severity |
 |---|---|---|
 | `FilesystemReadOnly` | `node_filesystem_readonly == 1` — usually the first visible sign of a failing disk | critical |
-| `DiskSpaceCritical` | under 5% free on `/`, `/mnt/storage` or `/mnt/tmdas` for 15m | critical |
+| `DiskSpaceCritical` | under 5% free for 15m | critical |
 | `DiskSpaceLow` | under 15% free for 1h | warning |
+| `VarSpaceCritical` | under 15% free on `/var` for 1h | critical |
 | `DiskWillFillSoon` | `predict_linear(node_filesystem_avail_bytes[6h], 4*24*3600) < 0` | warning |
 | `MemoryPressure` | under 10% `MemAvailable` for 15m | warning |
 | `CPUThermalThrottle` | package temperature over 85°C for 10m — the server is a laptop | warning |
 | `HostRebooted` | uptime under 5m — a server that reboots by itself is news | info |
+
+The disk rules watch every real filesystem rather than an enumerated list, so a
+mount added later is covered without editing rules. Pseudo-filesystems are
+excluded by `fstype`, and `/mnt/seagate` by mountpoint.
+
+`/var` is carved out of `DiskSpaceLow` and given its own rule at the same
+threshold but `critical` severity. A full `/var` stops Docker writing and
+journald logging, which takes the services down — a materially worse outcome
+than a merely untidy filesystem, and not one worth a `warning` the reader may
+sit on.
 
 ### Disk health — SMART via textfile collector
 
