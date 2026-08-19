@@ -28,9 +28,23 @@ echo "==> Checking rule syntax"
 promtool_run check rules roles/prometheus/files/rules/*.yml
 
 echo "==> Running rule unit tests"
+failed=0
 for test_file in tests/rules/*_test.yml; do
   echo "--- $test_file"
-  promtool_run test rules "$test_file"
+  output="$(promtool_run test rules "$test_file" 2>&1)" && status=0 || status=$?
+  echo "$output"
+  if [ "$status" -ne 0 ]; then
+    failed=1
+  fi
+  if grep -q "WARNING: no file match" <<<"$output"; then
+    echo "ERROR: $test_file's rule_files: entry matched no files" >&2
+    failed=1
+  fi
 done
+
+if [ "$failed" -ne 0 ]; then
+  echo "==> Rule checks FAILED" >&2
+  exit 1
+fi
 
 echo "==> All rule checks passed"

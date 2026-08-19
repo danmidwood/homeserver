@@ -63,6 +63,16 @@ tests:
               summary: "/mnt/storage has gone read-only"
               description: "A filesystem remounting itself read-only is usually the first visible sign of a failing disk. Check dmesg on xps.fritz.box:9100."
 
+  # A healthy (writable) filesystem must never fire FilesystemReadOnly.
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_readonly{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+        values: '0+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: FilesystemReadOnly
+        exp_alerts: []
+
   # 12% free is low but not critical: warning fires, critical does not.
   - interval: 1m
     input_series:
@@ -88,6 +98,18 @@ tests:
         alertname: DiskSpaceCritical
         exp_alerts: []
 
+  # 40% free is healthy and must never trigger DiskSpaceLow either.
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+        values: '40000+0x70'
+      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+        values: '100000+0x70'
+    alert_rule_test:
+      - eval_time: 61m
+        alertname: DiskSpaceLow
+        exp_alerts: []
+
   # Under 10% memory available fires MemoryPressure.
   - interval: 1m
     input_series:
@@ -106,6 +128,18 @@ tests:
             exp_annotations:
               summary: "Under 10% memory available"
               description: "xps.fritz.box:9100 has 5% of memory available."
+
+  # Half the memory available is healthy and must never fire MemoryPressure.
+  - interval: 1m
+    input_series:
+      - series: 'node_memory_MemAvailable_bytes{instance="xps.fritz.box:9100",job="node"}'
+        values: '5000+0x30'
+      - series: 'node_memory_MemTotal_bytes{instance="xps.fritz.box:9100",job="node"}'
+        values: '10000+0x30'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: MemoryPressure
+        exp_alerts: []
 
   # A sustained 90C package temperature fires CPUThermalThrottle.
   - interval: 1m
@@ -126,6 +160,27 @@ tests:
               summary: "CPU running at 90C"
               description: "The server is a laptop; sustained high temperature suggests blocked airflow or a failing fan."
 
+  # A cool CPU package must never fire CPUThermalThrottle.
+  - interval: 1m
+    input_series:
+      - series: 'node_hwmon_temp_celsius{instance="xps.fritz.box:9100",job="node",chip="platform_coretemp_0",sensor="temp1"}'
+        values: '50+0x20'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: CPUThermalThrottle
+        exp_alerts: []
+
+  # A hot NVMe drive is not the CPU and must never fire CPUThermalThrottle;
+  # NVMe routinely runs past 85C under sustained write.
+  - interval: 1m
+    input_series:
+      - series: 'node_hwmon_temp_celsius{instance="xps.fritz.box:9100",job="node",chip="nvme_nvme0",sensor="temp1"}'
+        values: '90+0x20'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: CPUThermalThrottle
+        exp_alerts: []
+
   # A box that booted two minutes ago is news; one up for days is not.
   - interval: 1m
     input_series:
@@ -144,3 +199,7 @@ tests:
             exp_annotations:
               summary: "xps.fritz.box:9100 rebooted"
               description: "Uptime is under five minutes. A server that reboots on its own is worth knowing about."
+      # Once uptime has passed five minutes, HostRebooted must go silent.
+      - eval_time: 10m
+        alertname: HostRebooted
+        exp_alerts: []

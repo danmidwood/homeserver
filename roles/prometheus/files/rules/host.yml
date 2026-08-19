@@ -58,7 +58,7 @@ groups:
           description: "{{ $labels.instance }} has {{ $value | humanizePercentage }} of memory available."
 
       - alert: CPUThermalThrottle
-        expr: node_hwmon_temp_celsius > 85
+        expr: node_hwmon_temp_celsius{chip="platform_coretemp_0"} > 85
         for: 10m
         labels:
           severity: warning
