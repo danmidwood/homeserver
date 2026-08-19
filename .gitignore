@@ -1,3 +1,4 @@
 /archlinux-*.iso
-/user_passwords.yml
+/user_passwords.yml*
+/.#user_passwords.yml
 /.superpowers/
