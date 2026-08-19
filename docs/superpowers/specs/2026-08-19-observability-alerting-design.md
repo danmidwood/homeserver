@@ -426,7 +426,7 @@ Six increments, each independently useful and independently revertable.
 
 | # | Increment | New services |
 |---|---|---|
-| 1 | Prometheus containerised, Alertmanager, Telegram receiver, host health rules, Watchdog and heartbeat | Prometheus (replaced), Alertmanager |
+| 1 | Prometheus containerised, Alertmanager, Telegram receiver, host health rules, Watchdog and heartbeat | Prometheus (replaced), Alertmanager — delivered 2026-08-19 |
 | 2 | Backup integrity: textfile collector, staleness rules, `OnFailure=` handler | none |
 | 3 | Disk health: smartmontools, textfile script and timer, SMART rules | none |
 | 4 | Container health: cAdvisor and rules | cAdvisor |
