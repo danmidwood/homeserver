@@ -110,6 +110,63 @@ tests:
         alertname: DiskSpaceLow
         exp_alerts: []
 
+  # A mountpoint excluded from disk-space alerting must never fire, even
+  # well under threshold and on a steadily decreasing trend.
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sdb1",fstype="ext4",mountpoint="/mnt/seagate"}'
+        values: '700-1x420'
+      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sdb1",fstype="ext4",mountpoint="/mnt/seagate"}'
+        values: '100000+0x420'
+    alert_rule_test:
+      - eval_time: 420m
+        alertname: DiskSpaceCritical
+        exp_alerts: []
+      - eval_time: 420m
+        alertname: DiskSpaceLow
+        exp_alerts: []
+      - eval_time: 420m
+        alertname: DiskWillFillSoon
+        exp_alerts: []
+
+  # 10% free on /var is above DiskSpaceLow's own threshold but must fire
+  # VarSpaceCritical instead, and must not also fire DiskSpaceLow.
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
+        values: '10000+0x70'
+      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
+        values: '100000+0x70'
+    alert_rule_test:
+      - eval_time: 61m
+        alertname: VarSpaceCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              instance: xps.fritz.box:9100
+              job: node
+              device: /dev/sda1
+              fstype: ext4
+              mountpoint: /var
+            exp_annotations:
+              summary: "/var has under 15% free"
+              description: "/var on xps.fritz.box:9100 is at 10% free. A full /var stops Docker and journald writing, which takes the services down."
+      - eval_time: 61m
+        alertname: DiskSpaceLow
+        exp_alerts: []
+
+  # 40% free on /var is healthy and must never fire VarSpaceCritical.
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
+        values: '40000+0x70'
+      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
+        values: '100000+0x70'
+    alert_rule_test:
+      - eval_time: 61m
+        alertname: VarSpaceCritical
+        exp_alerts: []
+
   # Under 10% memory available fires MemoryPressure.
   - interval: 1m
     input_series:
