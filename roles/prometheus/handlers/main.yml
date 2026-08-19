@@ -1,4 +1,10 @@
 - name: Restart Prometheus
-  service:
+  community.docker.docker_container:
     name: prometheus
+    state: started
+    restart: true
+
+- name: Restart node-exporter
+  ansible.builtin.systemd:
+    name: prometheus-node-exporter
     state: restarted

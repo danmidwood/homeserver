@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # node-exporter stays native on the host, so this is the one place the
+  # container/host boundary is crossed. host.docker.internal is provided by
+  # the etc_hosts entry on the container (Ansible's name for --add-host).
+  - job_name: "node"
+    static_configs:
+      - targets: ["host.docker.internal:9100"]

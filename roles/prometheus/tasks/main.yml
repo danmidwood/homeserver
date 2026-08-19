@@ -1,29 +1,125 @@
-- name: Ensure Prometheus and its Node Exporter is installed
+- name: Check whether the packaged Prometheus unit is present
+  ansible.builtin.stat:
+    path: /usr/lib/systemd/system/prometheus.service
+  register: packaged_prometheus_unit
+
+- name: Stop and disable the packaged Prometheus
+  ansible.builtin.systemd:
+    name: prometheus
+    state: stopped
+    enabled: false
+  when: packaged_prometheus_unit.stat.exists
+
+- name: Remove the packaged Prometheus
+  # Replaced by a digest-pinned container; a rolling-release package would
+  # move underneath us on every pacman -Syu.
+  community.general.pacman:
+    name: prometheus
+    state: absent
+
+- name: Remove the packaged Prometheus configuration directory
+  ansible.builtin.file:
+    path: /etc/prometheus
+    state: absent
+
+- name: Ensure node-exporter is installed
   ansible.builtin.package:
-    name:
-      - prometheus
-      - prometheus-node-exporter
+    name: prometheus-node-exporter
     state: present
 
-- name: Start and enable Prometheus
-  systemd:
-    name: prometheus
-    enabled: true
-    state: started
-    daemon_reload: true
+- name: Create the node-exporter textfile collector directory
+  ansible.builtin.file:
+    path: /var/lib/node_exporter/textfile_collector
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
 
-- name: Start and enable Node Exporter
-  systemd:
+- name: Enable the node-exporter textfile collector
+  ansible.builtin.copy:
+    content: |
+      NODE_EXPORTER_ARGS="--collector.textfile.directory=/var/lib/node_exporter/textfile_collector"
+    dest: /etc/conf.d/prometheus-node-exporter
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart node-exporter
+
+- name: Start and enable node-exporter
+  ansible.builtin.systemd:
     name: prometheus-node-exporter
     enabled: true
     state: started
     daemon_reload: true
 
-- name: Copy Prometheus configuration file
-  copy:
-    src: prometheus.yml
-    dest: /etc/prometheus/prometheus.yml
-    owner: prometheus
-    group: prometheus
+- name: Create Prometheus config directory
+  ansible.builtin.file:
+    path: /mnt/storage/config/prometheus
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create Prometheus rules directory
+  ansible.builtin.file:
+    path: /mnt/storage/config/prometheus/rules
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create Prometheus data directory
+  ansible.builtin.file:
+    # On local disk deliberately: Docker named volumes are bind-mounted to
+    # the external array, and Prometheus writes continuously.
+    path: /mnt/storage/config/prometheus/data
+    state: directory
+    owner: '65534'
+    group: '65534'
+    mode: '0755'
+
+- name: Template Prometheus configuration
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /mnt/storage/config/prometheus/prometheus.yml
+    owner: root
+    group: root
     mode: '0644'
   notify: Restart Prometheus
+
+- name: Copy Prometheus alert rules
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/mnt/storage/config/prometheus/rules/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: '0644'
+  with_fileglob:
+    - "rules/*.yml"
+  notify: Restart Prometheus
+
+- name: Pull the Prometheus image
+  community.docker.docker_image_pull:
+    name: "prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0"
+    pull: not_present
+
+- name: Run Prometheus container
+  community.docker.docker_container:
+    name: prometheus
+    image: "prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0"
+    state: started
+    restart_policy: always
+    networks:
+      - name: caddy_network
+    ports:
+      - "9090:9090"
+    etc_hosts:
+      host.docker.internal: host-gateway
+    volumes:
+      - /mnt/storage/config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /mnt/storage/config/prometheus/rules:/etc/prometheus/rules:ro
+      - /mnt/storage/config/prometheus/data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
