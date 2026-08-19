@@ -1,0 +1,462 @@
+# Observability and Alerting Design
+
+Date: 2026-08-19
+Status: Approved, ready for implementation planning
+
+## Overview
+
+The home server currently has no alerting. Prometheus and node-exporter are
+installed as pacman packages solely to give Grafana something to draw, with
+stock configuration: the `alertmanagers:` block is commented out and
+`rule_files:` is empty. Nothing watches the containers, nothing watches the
+restic backup, and nothing tells Daniel when any of it breaks.
+
+This design adds a complete alerting path that delivers to Telegram, and
+replaces the host-native metrics tier with digest-pinned containers so the
+whole stack matches the pinning convention established for every other
+service.
+
+### Goals
+
+- Find out when the offsite backup fails, and — more importantly — when it
+  silently stops running at all.
+- Find out when a disk is filling, a filesystem goes read-only, or a disk is
+  predicting its own failure.
+- Find out when a container has died, is restart-looping, or was OOM-killed.
+- Find out when a Caddy-fronted service stops answering, or a certificate
+  stops renewing.
+- Find out when the server itself is dead, via an off-box dead-man's-switch.
+- Keep all of the above declarative and version-controlled in this repository.
+
+### Non-goals
+
+- Inbound Telegram commands (`/status`, `/backup_now`, `/restart`, file
+  inbox). Deferred to a separate design; see "Phase 2" below.
+- Log aggregation. Metrics only.
+- Pruning the restic repository. A real problem — the B2 key deliberately has
+  no delete capability, so the repository grows without bound — but it is a
+  backup-lifecycle concern, not an observability one, and needs the admin key
+  that is kept off the server. Tracked separately.
+
+## Decisions
+
+Each of these was a genuine fork during design; recording the reasoning so a
+future reader does not have to re-derive it.
+
+### Prometheus rules plus Alertmanager, rather than Grafana alerting
+
+Grafana has had unified alerting since v8 and can send to Telegram itself,
+which would have meant zero new services. It was rejected because Grafana's
+alert rules live in Grafana's own database rather than in this repository,
+placing them outside the infrastructure-as-code boundary that everything else
+here respects, and losing them if the volume is lost. Prometheus rules are
+plain YAML files that can be reviewed, tested and version-controlled.
+
+Netdata was also considered — hundreds of sensible alarms out of the box and
+by far the shortest path to coverage — but rejected for the same
+config-as-code reason, and because it would mean discarding the
+industry-standard tooling rather than building on it.
+
+### Containerise the metrics tier
+
+Prometheus, Alertmanager, blackbox exporter and cAdvisor all run as
+digest-pinned containers on `caddy_network`, joining Grafana.
+
+The alternative considered was moving Grafana onto the host to sit alongside a
+native Prometheus. That was rejected because it does not remove the
+host/container boundary, it merely relocates it: with Grafana native, Caddy
+(a container) has to reach in to Grafana instead of Grafana reaching out to
+Prometheus.
+
+The deciding argument is pinning. Commit d69771a pinned every container image
+to a digest. Native pacman packages on a rolling-release distribution are the
+opposite of that: `pacman -Syu` moves Prometheus, Alertmanager and Grafana to
+whatever upstream shipped that week, with breaking configuration changes
+arriving unannounced. Containerising the metrics tier is the choice that is
+consistent with the direction the repository has already taken.
+
+Containers address each other by name (`http://prometheus:9090`,
+`http://alertmanager:9093`) with no bridge-gateway addressing anywhere in the
+web tier.
+
+### node-exporter stays native
+
+Its job is measuring the host. Containerising it means bind-mounting `/proc`,
+`/sys` and `/` and fighting namespaces for worse data. It remains a pacman
+package under systemd.
+
+This leaves exactly one host/container crossing: the Prometheus container
+scraping node-exporter on the host, handled with
+`extra_hosts: host.docker.internal:host-gateway` and a scrape target in
+`prometheus.yml`. That crossing is declared in a file in this repository,
+which is the property that matters.
+
+### The existing Prometheus is replaced, not migrated
+
+No historical data is carried across. Daniel confirmed there is nothing in the
+existing time-series database worth keeping, which removes the only
+complicated step from the migration.
+
+### All notifications route through Alertmanager
+
+Two event sources bypass Prometheus and inject alerts directly into
+Alertmanager's API: the backup unit's `OnFailure=` handler, and Diun's
+image-update notifications. Sending them straight to Telegram instead would
+have been simpler and would fail independently of Alertmanager's health, but
+would mean three senders formatting messages three different ways, and
+silences that do not apply to events. A single exit to Telegram keeps
+formatting, grouping and silencing in one configuration.
+
+### Alertmanager and Prometheus are LAN-only
+
+Both ship with no authentication whatsoever — anyone who can reach
+Alertmanager can silence every alert. They publish host ports (`:9093` and
+`:9090`) reachable on the LAN and are deliberately absent from the Caddyfile,
+following the same "non-public" pattern already chosen for Portainer in
+commit b416ef7.
+
+### Prometheus data lives on local disk, not the DAS
+
+Docker's volume directory is bind-mounted to `/mnt/tmdas/dockervolumes`, so a
+named volume would place the time-series database on the external array.
+Prometheus writes every 15 seconds indefinitely, which would keep those disks
+permanently busy. The TSDB is therefore bind-mounted to
+`/mnt/storage/config/prometheus/data`, on local disk.
+
+## Architecture
+
+```
+SENSING                          DECIDING              DELIVERING
+
+node_exporter  :9100 ─┐
+  + textfile collector │
+  + SMART metrics      │
+cAdvisor       :8080 ─┼─ scrape ─→ Prometheus ─ fire ─→ Alertmanager ──→ Telegram
+blackbox       :9115 ─┘             :9090      alerts     :9093       (native receiver)
+                                        │                    ▲
+                                        │  Watchdog          │
+                                        └──  (always ────────┤──→ Healthchecks.io
+                                              firing)        │      (webhook)
+restic-backup.service ── OnFailure ──→ notify script ────────┤
+                                       (POST /api/v2/alerts) │
+Diun (container) ──────── on new image tag ──────────────────┘
+```
+
+Three sensors feed Prometheus, which evaluates rules. Two event sources inject
+alerts directly into Alertmanager. Alertmanager is the single exit point.
+
+### What runs where
+
+| Component | Form | Network | Ports |
+|---|---|---|---|
+| Prometheus | pinned container | `caddy_network` | `9090` on host, LAN only |
+| Alertmanager | pinned container | `caddy_network` | `9093` on host, LAN only |
+| cAdvisor | pinned container | `caddy_network` | `8080` on host |
+| blackbox exporter | pinned container | `caddy_network` | internal only |
+| Diun | pinned container | `caddy_network` | none |
+| Grafana | pinned container (existing) | `caddy_network` | via Caddy |
+| node-exporter | pacman package (existing) | host | `9100` |
+
+Nothing new is added to the Caddyfile.
+
+### One-shot events need explicit expiry
+
+Alertmanager's model is that an alert is firing until it stops being sent. A
+backup failure or a new image tag is a moment, not a state; pushed naively it
+would re-notify indefinitely. Both event paths therefore set an explicit
+`endsAt` a few minutes in the future so the alert self-resolves.
+
+### Risk: Diun's payload shape
+
+Diun's `webhook` notifier posts Diun's own JSON schema, and it is not
+confirmed that it can be templated into the `/api/v2/alerts` format
+Alertmanager requires. Diun also ships a `script` notifier that runs a command
+with `DIUN_ENTRY_*` environment variables set, which would allow the payload
+to be constructed directly.
+
+Resolution during implementation: try the `script` notifier first. If neither
+works cleanly, fall back to Diun's built-in Telegram notifier talking directly
+to Telegram. That fallback costs grouping on image updates and nothing else,
+and does not affect any other part of this design.
+
+## Alert rules
+
+### Host health — node-exporter, no new sensors
+
+| Alert | Condition | Severity |
+|---|---|---|
+| `FilesystemReadOnly` | `node_filesystem_readonly == 1` — usually the first visible sign of a failing disk | critical |
+| `DiskSpaceCritical` | under 5% free on `/`, `/mnt/storage` or `/mnt/tmdas` for 15m | critical |
+| `DiskSpaceLow` | under 15% free for 1h | warning |
+| `DiskWillFillSoon` | `predict_linear(node_filesystem_avail_bytes[6h], 4*24*3600) < 0` | warning |
+| `MemoryPressure` | under 10% `MemAvailable` for 15m | warning |
+| `CPUThermalThrottle` | package temperature over 85°C for 10m — the server is a laptop | warning |
+| `HostRebooted` | uptime under 5m — a server that reboots by itself is news | info |
+
+### Disk health — SMART via textfile collector
+
+`smartmontools` is installed, and the standard `smartmon.sh` textfile script
+runs as root on a 15-minute systemd timer, writing to node-exporter's textfile
+directory. This matters because `/mnt/tmdas` holds the photo and document
+libraries.
+
+| Alert | Condition | Severity |
+|---|---|---|
+| `SmartHealthFailed` | SMART overall health self-assessment reports failure | critical |
+| `SmartPendingSectors` | current pending sector count above zero | critical |
+| `SmartReallocatedSectors` | reallocated sector count above zero | warning |
+| `SmartDiskTemperature` | drive temperature above threshold for 15m | warning |
+
+### Backup integrity — textfile collector plus event push
+
+| Alert | Condition | Severity |
+|---|---|---|
+| `BackupFailed` | pushed by `OnFailure=` the instant the unit exits non-zero, carrying exit code and last journal lines | critical |
+| `BackupStale` | `time() - restic_backup_last_success_timestamp_seconds > 26*3600` | critical |
+| `BackupMetricMissing` | `absent(restic_backup_last_success_timestamp_seconds)` | critical |
+
+`BackupMetricMissing` is not redundant with `BackupStale`. `BackupStale`
+compares a timestamp; if the textfile was never written there is no timestamp
+to compare and the rule silently never fires. `absent()` catches exactly that
+case, which is the failure mode where the backup appears covered and is not.
+
+`restic-backup.sh` writes `restic_backup_last_success_timestamp_seconds` and
+`restic_backup_duration_seconds` to the textfile directory, via a temporary
+file and an atomic rename so a partially-written file is never scraped.
+
+Repository size is deliberately not exported. `restic stats` against B2 is
+slow and costs API calls on every run. If the unbounded-growth signal is
+wanted later it belongs on a weekly timer, not on every backup.
+
+### Container health — cAdvisor
+
+| Alert | Condition | Severity |
+|---|---|---|
+| `ContainerMissing` | an expected container not seen for 5m | critical |
+| `ContainerRestartLoop` | more than 3 starts in an hour | warning |
+| `ContainerOOMKilled` | any OOM kill event | warning |
+
+`ContainerMissing` needs a list of what is expected. Ansible already knows
+every container name because it creates them, so the rule file is templated
+from a `monitored_containers` variable. Adding a service to the playbook then
+adds its alert automatically rather than depending on someone remembering.
+
+### Reachability and TLS — blackbox exporter
+
+| Alert | Condition | Severity |
+|---|---|---|
+| `EndpointDown` | `probe_success == 0` for 5m | critical |
+| `CertExpiringSoon` | `probe_ssl_earliest_cert_expiry - time() < 14d` | warning |
+
+Templated from a `monitored_endpoints` variable, matching the Caddyfile
+hostnames. The certificate alert is a renewal-is-broken detector rather than
+an expiry detector: Caddy renews at 30 days, so reaching 14 means something
+has gone wrong.
+
+This bundle catches the failure class that container metrics miss entirely —
+the container is up and healthy but the application inside is wedged.
+
+### Meta
+
+| Alert | Condition | Severity |
+|---|---|---|
+| `TargetDown` | `up == 0` for 10m — how cAdvisor or blackbox dying gets noticed | warning |
+| `Watchdog` | always firing, by construction | n/a |
+
+`Watchdog` is the dead-man's-switch. It is routed to a webhook receiver that
+pings Healthchecks.io, which proves the entire chain is alive: node-exporter
+scraping, Prometheus evaluating, Alertmanager routing. If any link breaks the
+pings stop and Healthchecks sends an email from outside the server.
+
+This is the only mechanism in the design that can report the failure of the
+monitoring itself, or of the machine as a whole — power loss, network loss, or
+a wedged kernel produce silence from everything else, and silence is
+indistinguishable from health.
+
+## Notification routing
+
+Alertmanager routes to Telegram, grouped by alertname, using the bot token and
+chat id from `user_passwords.yml`.
+
+| Route | Group wait | Repeat interval |
+|---|---|---|
+| `severity: critical` | 30s | 4h |
+| `severity: warning` | 30s | 24h |
+| `severity: info` | 5m | 7d |
+| Diun image updates | 5m | 7d |
+| `Watchdog` | — | webhook to Healthchecks, continuous |
+
+Diun's long group wait means ten images updating on the same afternoon arrive
+as one message rather than ten.
+
+The bot token is supplied to Alertmanager via `bot_token_file` rather than
+inlined, which keeps the credential out of the configuration that gets
+rendered into logs on a parse error. The file is mode `0600`, owned by the uid
+the container runs as, and mounted read-only.
+
+## Repository changes
+
+### New roles
+
+Following the existing one-role-per-service convention, each a digest-pinned
+container on `caddy_network`:
+
+- `alertmanager` — container, configuration template, Telegram receiver,
+  routing tree, webhook receiver for the Watchdog
+- `cadvisor` — container, Docker socket mounted read-only, publishes `:8080`
+- `blackbox_exporter` — container, probe module configuration
+- `diun` — container, Docker socket mounted read-only, notifier aimed at
+  Alertmanager
+
+### Modified roles
+
+- `prometheus` — stops, disables and removes the pacman `prometheus` package;
+  runs a pinned container with its TSDB bind-mounted to
+  `/mnt/storage/config/prometheus/data`; keeps `prometheus-node-exporter`
+  native and adds its textfile-collector directory plus the
+  `--collector.textfile.directory` flag; installs `smartmontools`, the
+  `smartmon.sh` script and its timer; owns all alert rule files.
+- `backup` — `restic-backup.sh` writes success timestamp and duration to the
+  textfile directory; `restic-backup.service` gains
+  `OnFailure=backup-alert.service`; that new oneshot unit pushes an alert to
+  Alertmanager carrying the exit code and last journal lines.
+- `grafana` — datasource provisioned from a file pointing at
+  `http://prometheus:9090`, moving it out of Grafana's database and into git.
+- `caddy` — unchanged. Nothing new is exposed publicly.
+
+### Where rule files live
+
+All rule files live in `roles/prometheus/`, not distributed into the roles
+they monitor. Cohesion would argue for keeping backup rules beside the backup
+role, but that means one role writing into another's configuration directory
+with a cross-role reload handler — subtle coupling for little benefit.
+Reviewing the entire alert set as one group is worth more.
+
+Two rule files are templated rather than static: `ContainerMissing` from
+`monitored_containers`, and `EndpointDown` from `monitored_endpoints`. Both
+lists live in `roles/prometheus/defaults/main.yml`.
+
+### Secrets
+
+Three keys added to `user_passwords.yml` and its committed example:
+
+```yaml
+telegram_bot_token: ""
+telegram_chat_id: ""
+heartbeat_ping_url: ""
+```
+
+Real values are never written into this document or any other committed file.
+`user_passwords.yml` is gitignored; the example file documents the required
+keys with empty values.
+
+## Testing
+
+### Alert rules get unit tests
+
+`promtool test rules` synthesises a metric series and asserts what fires, so a
+rule can be verified without deploying anything or waiting for the `for:`
+duration to elapse. Every rule above gets a test.
+
+This catches the two mistakes that actually happen in practice: a mistyped
+metric name that silently never matches anything, and a `for:` duration that
+makes an alert unreachable.
+
+`BackupMetricMissing` is the rule most worth testing, because its entire
+purpose is firing when data is absent — a condition that cannot be verified by
+inspecting a working system.
+
+### Configuration validation
+
+`promtool check config` and `promtool check rules` against the rendered
+Prometheus configuration; `amtool check-config` against Alertmanager's. Both
+catch the class of error where the service starts successfully and then
+quietly does nothing.
+
+### Where tests run
+
+A `tests/` directory with a script that runs promtool inside the pinned
+Prometheus image, so nothing needs installing locally and the tool version
+matches the deployed one exactly.
+
+### Ansible
+
+Every new role must be idempotent: a second run reports zero changes. This
+matters particularly for the pacman package removal in the `prometheus` role.
+Commit d69771a was dedicated to fixing idempotency bugs, so the check has
+demonstrated value here.
+
+### End-to-end verification
+
+Each check is performed as the increment that enables it lands.
+
+1. `amtool alert add` a synthetic alert, confirm arrival in Telegram. Proves
+   the delivery chain before any rule exists.
+2. Stop a container by hand; confirm `ContainerMissing` fires, then start it
+   and confirm the alert resolves. Resolution matters — an alert that fires
+   but never clears trains the reader to ignore it.
+3. Backdate the backup timestamp file; confirm `BackupStale` fires.
+4. Run `restic-backup.service` with deliberately broken credentials; confirm
+   `BackupFailed` arrives carrying the actual error text.
+5. Block the Healthchecks URL; confirm Healthchecks emails when pings stop.
+
+Step 4 is worth performing rather than assuming, since it is the alert this
+project exists to deliver.
+
+## Build order
+
+Six increments, each independently useful and independently revertable.
+
+| # | Increment | New services |
+|---|---|---|
+| 1 | Prometheus containerised, Alertmanager, Telegram receiver, host health rules, Watchdog and heartbeat | Prometheus (replaced), Alertmanager |
+| 2 | Backup integrity: textfile collector, staleness rules, `OnFailure=` handler | none |
+| 3 | Disk health: smartmontools, textfile script and timer, SMART rules | none |
+| 4 | Container health: cAdvisor and rules | cAdvisor |
+| 5 | Reachability and TLS: blackbox exporter and rules | blackbox |
+| 6 | Diun image-update notifications | Diun |
+
+Increment 1 proves the entire Telegram path end to end, so every increment
+after it is low-risk.
+
+### Rollback
+
+Each increment is a self-contained role plus a playbook line, so backing one
+out is a revert and a re-run. The only irreversible step is removing the
+pacman Prometheus in increment 1, and its data has already been declared
+expendable.
+
+## Known gaps
+
+- **Alertmanager cannot report its own death.** Prometheus can detect it via
+  `TargetDown` but has no way to deliver that alert. The Watchdog covers this
+  from outside, which is why it is in increment 1 rather than deferred.
+- **The restic repository is never pruned.** Out of scope here, but it will
+  eventually cost real money and needs addressing separately.
+- **No log aggregation.** Alerts will say a container is restart-looping but
+  not why; diagnosis still means SSH and `docker logs`.
+
+## Phase 2: inbound Telegram bot
+
+Deliberately deferred to its own design document. The original plan had the
+bot handling both directions, but choosing Alertmanager as the delivery engine
+removed its outbound role entirely. What remains is purely inbound: `/status`,
+`/backup_now`, `/restart <service>`, and a file inbox.
+
+Phase 1 creates the bot identity with BotFather and stores the token and chat
+id, because Alertmanager's Telegram receiver needs exactly those. Phase 2 is
+therefore purely additive — a service that long-polls the same bot — with
+nothing to rework.
+
+Two findings from this design carry forward into that one:
+
+- **The containers are not systemd units.** Every role uses
+  `community.docker.docker_container` with `restart_policy: always`, so Docker
+  supervises them. There is no `grafana.service`; `systemctl restart grafana`
+  would simply error. Container restart needs a different mechanism, and that
+  mechanism is the main privilege-escalation surface in the whole project.
+  `/backup_now` is unaffected — `restic-backup.service` is a real unit.
+- **Telegram's Bot API caps file downloads at 20MB.** Adequate for documents,
+  receipts and screenshots; not for video or large photo dumps. Raising it
+  requires running a local Bot API server, which is not worth the
+  infrastructure.
