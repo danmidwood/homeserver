@@ -1,0 +1,15 @@
+groups:
+  - name: watchdog
+    rules:
+      # Always fires, by construction. Routed to a webhook that pings
+      # Healthchecks.io; if Prometheus stops evaluating, Alertmanager stops
+      # routing, or the machine dies, the pings stop and Healthchecks
+      # raises the alarm from outside the server. This is the only rule
+      # that can report the failure of the monitoring itself.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Monitoring pipeline heartbeat"
+          description: "This alert is always firing. If it stops arriving at Healthchecks.io, the monitoring chain or the host itself has failed."

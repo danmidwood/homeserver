@@ -1,0 +1,27 @@
+rule_files:
+  - ../../roles/prometheus/files/rules/watchdog.yml
+
+evaluation_interval: 1m
+
+tests:
+  # No input series at all: Watchdog must still fire, because its whole
+  # purpose is to be independent of anything being scraped.
+  - interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: Watchdog
+        exp_alerts:
+          - exp_labels:
+              severity: none
+            exp_annotations:
+              summary: "Monitoring pipeline heartbeat"
+              description: "This alert is always firing. If it stops arriving at Healthchecks.io, the monitoring chain or the host itself has failed."
+      - eval_time: 30m
+        alertname: Watchdog
+        exp_alerts:
+          - exp_labels:
+              severity: none
+            exp_annotations:
+              summary: "Monitoring pipeline heartbeat"
+              description: "This alert is always firing. If it stops arriving at Healthchecks.io, the monitoring chain or the host itself has failed."
