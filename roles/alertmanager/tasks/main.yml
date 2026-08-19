@@ -1,0 +1,67 @@
+- name: Ensure Telegram and heartbeat credentials are configured
+  ansible.builtin.assert:
+    that:
+      - telegram_bot_token | default('') | length > 0
+      - telegram_chat_id | default('') | length > 0
+      - heartbeat_ping_url | default('') | length > 0
+    fail_msg: "telegram_bot_token, telegram_chat_id and heartbeat_ping_url must all be set in user_passwords.yml"
+
+- name: Create Alertmanager config directory
+  ansible.builtin.file:
+    path: /mnt/storage/config/alertmanager
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create Alertmanager data directory
+  ansible.builtin.file:
+    path: /mnt/storage/config/alertmanager/data
+    state: directory
+    # Upstream image runs as uid 65534 (nobody); it must own its silence
+    # and notification-log state or it fails to start.
+    owner: '65534'
+    group: '65534'
+    mode: '0755'
+
+- name: Write the Telegram bot token
+  ansible.builtin.copy:
+    content: "{{ telegram_bot_token }}"
+    dest: /mnt/storage/config/alertmanager/telegram_token
+    owner: '65534'
+    group: '65534'
+    mode: '0600'
+  no_log: true
+  notify: Restart Alertmanager
+
+- name: Template Alertmanager configuration
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: /mnt/storage/config/alertmanager/alertmanager.yml
+    owner: '65534'
+    group: '65534'
+    mode: '0640'
+  notify: Restart Alertmanager
+
+- name: Pull the Alertmanager image
+  community.docker.docker_image_pull:
+    name: "prom/alertmanager:v0.34.0@sha256:690c7b525f4367aa91f73e2f91c632206d32e97c6384bdbf2fb7a861b420340d"
+    pull: not_present
+
+- name: Run Alertmanager container
+  community.docker.docker_container:
+    name: alertmanager
+    image: "prom/alertmanager:v0.34.0@sha256:690c7b525f4367aa91f73e2f91c632206d32e97c6384bdbf2fb7a861b420340d"
+    state: started
+    restart_policy: always
+    networks:
+      - name: caddy_network
+    ports:
+      - "9093:9093"
+    volumes:
+      - /mnt/storage/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - /mnt/storage/config/alertmanager/telegram_token:/etc/alertmanager/telegram_token:ro
+      - /mnt/storage/config/alertmanager/data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"

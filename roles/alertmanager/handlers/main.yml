@@ -1,0 +1,5 @@
+- name: Restart Alertmanager
+  community.docker.docker_container:
+    name: alertmanager
+    state: started
+    restart: true

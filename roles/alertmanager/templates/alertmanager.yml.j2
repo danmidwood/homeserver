@@ -1,0 +1,88 @@
+global:
+  resolve_timeout: 5m
+
+templates: []
+
+route:
+  receiver: telegram-warning
+  group_by: ['alertname']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 24h
+
+  routes:
+    # The Watchdog is matched first and never reaches Telegram.
+    - matchers:
+        - alertname = "Watchdog"
+      receiver: heartbeat
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 5m
+      continue: false
+
+    - matchers:
+        - severity = "critical"
+      receiver: telegram-critical
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+
+    - matchers:
+        - severity = "info"
+      receiver: telegram-info
+      group_wait: 5m
+      group_interval: 1h
+      repeat_interval: 168h
+
+receivers:
+  - name: heartbeat
+    webhook_configs:
+      - url: {{ heartbeat_ping_url }}
+        send_resolved: false
+
+  - name: telegram-critical
+    telegram_configs:
+      - bot_token_file: /etc/alertmanager/telegram_token
+        chat_id: {{ telegram_chat_id }}
+        parse_mode: HTML
+        send_resolved: true
+        message: |
+{% raw %}
+          {{ if eq .Status "firing" }}🔴 <b>CRITICAL</b>{{ else }}✅ <b>RESOLVED</b>{{ end }}
+          {{ range .Alerts }}
+          <b>{{ .Labels.alertname }}</b>
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+{% endraw %}
+
+  - name: telegram-warning
+    telegram_configs:
+      - bot_token_file: /etc/alertmanager/telegram_token
+        chat_id: {{ telegram_chat_id }}
+        parse_mode: HTML
+        send_resolved: true
+        message: |
+{% raw %}
+          {{ if eq .Status "firing" }}⚠️ <b>WARNING</b>{{ else }}✅ <b>RESOLVED</b>{{ end }}
+          {{ range .Alerts }}
+          <b>{{ .Labels.alertname }}</b>
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+{% endraw %}
+
+  - name: telegram-info
+    telegram_configs:
+      - bot_token_file: /etc/alertmanager/telegram_token
+        chat_id: {{ telegram_chat_id }}
+        parse_mode: HTML
+        send_resolved: false
+        message: |
+{% raw %}
+          ℹ️ <b>INFO</b>
+          {{ range .Alerts }}
+          <b>{{ .Labels.alertname }}</b>
+          {{ .Annotations.summary }}
+          {{ end }}
+{% endraw %}

@@ -14,6 +14,7 @@
     - docker
     - caddy
     - plex
+    - alertmanager
     - grafana
     - portainer
     - kavita
