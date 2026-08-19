@@ -9,6 +9,16 @@
   community.general.timezone:
     name: "Europe/London"
 
+- name: Enable network time synchronisation
+  # Without this the clock free-runs: it had drifted nearly nine minutes.
+  # Vaultwarden's TOTP codes tolerate roughly 30 seconds of skew, so a
+  # drifting clock silently breaks two-factor auth, and every timestamp the
+  # monitoring stack records is wrong by the same amount.
+  ansible.builtin.systemd:
+    name: systemd-timesyncd
+    enabled: true
+    state: started
+
 - name: Set locale
   ansible.builtin.lineinfile:
     path: /etc/locale.gen
