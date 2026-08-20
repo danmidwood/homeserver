@@ -206,17 +206,48 @@ sit on.
 
 ### Disk health — SMART via textfile collector
 
-`smartmontools` is installed, and the standard `smartmon.sh` textfile script
-runs as root on a 15-minute systemd timer, writing to node-exporter's textfile
-directory. This matters because `/mnt/tmdas` holds the photo and document
-libraries.
+A collector script runs `smartctl` on a 15-minute systemd timer and writes
+metrics to node-exporter's textfile directory. This matters because
+`/mnt/tmdas` holds the photo and document libraries, and the array behind it
+is deliberately running as a single disk until a second one is added — so
+there is no redundancy to absorb a failure.
+
+**The device list is explicit, not scanned.** `smartctl --scan` on this host
+returns `/dev/sda` and `/dev/nvme0`, and misses `/dev/sdb` entirely — the
+8TB array disk, the only one whose failure would lose data. That disk answers
+SMART only when told `-d sat`. An auto-scanning collector would therefore
+report healthy forever while never looking at the disk that matters, which is
+the precise failure this project exists to prevent. `/dev/sda` is excluded: its
+USB bridge rejects SMART commands outright, and the drive is being unplugged.
+
+The collector uses `smartctl --json` and parses with `jq` rather than scraping
+text, and it emits a `smart_collector_success` gauge so a broken collector is
+itself detectable — the same reasoning as `BackupMetricMissing`.
+
+The two disks report different attribute families, so each needs its own
+rules. NVMe's `critical_warning` is a bitfield covering spare exhaustion,
+temperature excursions, degraded reliability and read-only fallback, so one
+rule on it replaces several.
 
 | Alert | Condition | Severity |
 |---|---|---|
-| `SmartHealthFailed` | SMART overall health self-assessment reports failure | critical |
-| `SmartPendingSectors` | current pending sector count above zero | critical |
+| `SmartHealthFailed` | the drive's own overall health self-assessment fails | critical |
+| `SmartPendingSectors` | sectors awaiting reallocation, above zero | critical |
 | `SmartReallocatedSectors` | reallocated sector count above zero | warning |
-| `SmartDiskTemperature` | drive temperature above threshold for 15m | warning |
+| `SmartDiskTemperature` | drive above 55°C for 15m | warning |
+| `NvmeCriticalWarning` | NVMe `critical_warning` bitfield non-zero | critical |
+| `NvmeMediaErrors` | NVMe media and data integrity errors above zero | critical |
+| `NvmeWearHigh` | NVMe `percentage_used` above 80% | warning |
+| `SmartCollectorFailed` | the collector script itself failed or stopped running | warning |
+| `MdArrayFailed` | `md0` has zero active disks | critical |
+
+`MdArrayFailed` needs no new sensor: node-exporter already exports
+`node_md_disks{device="md0",state="active"}`. It deliberately does NOT alert
+on a merely degraded array, because a single-disk array is the current
+intended state and such an alert would fire permanently — the fastest way to
+train a reader to ignore Telegram. **When the second disk is added, tighten
+this to alert on any degradation**, comparing active disks against
+`node_md_disks_required`.
 
 ### Backup integrity — textfile collector plus event push
 
