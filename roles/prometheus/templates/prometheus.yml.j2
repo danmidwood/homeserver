@@ -14,6 +14,10 @@ scrape_configs:
   - job_name: "prometheus"
     static_configs:
       - targets: ["localhost:9090"]
+        # Set instance explicitly: it otherwise defaults to the scraped
+        # address, which puts Docker plumbing into every alert message.
+        labels:
+          instance: "xps"
 
   # node-exporter stays native on the host, so this is the one place the
   # container/host boundary is crossed. host.docker.internal is provided by
@@ -21,3 +25,5 @@ scrape_configs:
   - job_name: "node"
     static_configs:
       - targets: ["host.docker.internal:9100"]
+        labels:
+          instance: "xps"

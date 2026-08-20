@@ -464,11 +464,6 @@ expendable.
   not why; diagnosis still means SSH and `docker logs`.
 - **No clock-drift alert**, though node-exporter already exports
   `node_timex_sync_status` and a rule could be added cheaply.
-- **`instance` renders as `host.docker.internal:9100`** in every host alert,
-  which means nothing to a human reader; fixable with `relabel_configs` on
-  the `node` scrape job, at which point the test fixtures should be updated
-  to match that reality instead of using `xps.fritz.box:9100`, a value
-  production never actually produces.
 - **A missing or typo'd `severity` label routes to the default Telegram
   receiver**, which is `telegram-warning`, so a future rule that gets its
   severity wrong is delivered silently mislabelled as WARNING rather than

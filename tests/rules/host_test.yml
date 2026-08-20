@@ -7,9 +7,9 @@ tests:
   # 1% free on /mnt/storage, held steady for half an hour.
   - interval: 1m
     input_series:
-      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_avail_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '1000+0x30'
-      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_size_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '100000+0x30'
     alert_rule_test:
       # Must NOT fire before the 15m `for:` has elapsed.
@@ -22,21 +22,21 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: critical
-              instance: xps.fritz.box:9100
+              instance: xps
               job: node
               device: /dev/sda2
               fstype: ext4
               mountpoint: /mnt/storage
             exp_annotations:
               summary: "/mnt/storage has under 5% free"
-              description: "/mnt/storage on xps.fritz.box:9100 is at 1% free."
+              description: "/mnt/storage on xps is at 1% free."
 
   # 40% free is healthy and must never fire.
   - interval: 1m
     input_series:
-      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_avail_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '40000+0x30'
-      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_size_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '100000+0x30'
     alert_rule_test:
       - eval_time: 30m
@@ -46,7 +46,7 @@ tests:
   # A read-only filesystem fires almost immediately.
   - interval: 1m
     input_series:
-      - series: 'node_filesystem_readonly{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_readonly{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '1+0x10'
     alert_rule_test:
       - eval_time: 6m
@@ -54,19 +54,19 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: critical
-              instance: xps.fritz.box:9100
+              instance: xps
               job: node
               device: /dev/sda2
               fstype: ext4
               mountpoint: /mnt/storage
             exp_annotations:
               summary: "/mnt/storage has gone read-only"
-              description: "A filesystem remounting itself read-only is usually the first visible sign of a failing disk. Check dmesg on xps.fritz.box:9100."
+              description: "A filesystem remounting itself read-only is usually the first visible sign of a failing disk. Check dmesg on xps."
 
   # A healthy (writable) filesystem must never fire FilesystemReadOnly.
   - interval: 1m
     input_series:
-      - series: 'node_filesystem_readonly{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_readonly{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '0+0x10'
     alert_rule_test:
       - eval_time: 6m
@@ -76,9 +76,9 @@ tests:
   # 12% free is low but not critical: warning fires, critical does not.
   - interval: 1m
     input_series:
-      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_avail_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '12000+0x70'
-      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_size_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '100000+0x70'
     alert_rule_test:
       - eval_time: 61m
@@ -86,14 +86,14 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: warning
-              instance: xps.fritz.box:9100
+              instance: xps
               job: node
               device: /dev/sda2
               fstype: ext4
               mountpoint: /mnt/storage
             exp_annotations:
               summary: "/mnt/storage has under 15% free"
-              description: "/mnt/storage on xps.fritz.box:9100 is at 12% free."
+              description: "/mnt/storage on xps is at 12% free."
       - eval_time: 61m
         alertname: DiskSpaceCritical
         exp_alerts: []
@@ -101,9 +101,9 @@ tests:
   # 40% free is healthy and must never trigger DiskSpaceLow either.
   - interval: 1m
     input_series:
-      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_avail_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '40000+0x70'
-      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_size_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '100000+0x70'
     alert_rule_test:
       - eval_time: 61m
@@ -114,9 +114,9 @@ tests:
   # well under threshold and on a steadily decreasing trend.
   - interval: 1m
     input_series:
-      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sdb1",fstype="ext4",mountpoint="/mnt/seagate"}'
+      - series: 'node_filesystem_avail_bytes{instance="xps",job="node",device="/dev/sdb1",fstype="ext4",mountpoint="/mnt/seagate"}'
         values: '700-1x420'
-      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sdb1",fstype="ext4",mountpoint="/mnt/seagate"}'
+      - series: 'node_filesystem_size_bytes{instance="xps",job="node",device="/dev/sdb1",fstype="ext4",mountpoint="/mnt/seagate"}'
         values: '100000+0x420'
     alert_rule_test:
       - eval_time: 420m
@@ -133,9 +133,9 @@ tests:
   # VarSpaceCritical instead, and must not also fire DiskSpaceLow.
   - interval: 1m
     input_series:
-      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
+      - series: 'node_filesystem_avail_bytes{instance="xps",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
         values: '10000+0x70'
-      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
+      - series: 'node_filesystem_size_bytes{instance="xps",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
         values: '100000+0x70'
     alert_rule_test:
       - eval_time: 61m
@@ -143,14 +143,14 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: critical
-              instance: xps.fritz.box:9100
+              instance: xps
               job: node
               device: /dev/sda1
               fstype: ext4
               mountpoint: /var
             exp_annotations:
               summary: "/var has under 15% free"
-              description: "/var on xps.fritz.box:9100 is at 10% free. A full /var stops Docker and journald writing, which takes the services down."
+              description: "/var on xps is at 10% free. A full /var stops Docker and journald writing, which takes the services down."
       - eval_time: 61m
         alertname: DiskSpaceLow
         exp_alerts: []
@@ -158,9 +158,9 @@ tests:
   # 40% free on /var is healthy and must never fire VarSpaceCritical.
   - interval: 1m
     input_series:
-      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
+      - series: 'node_filesystem_avail_bytes{instance="xps",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
         values: '40000+0x70'
-      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
+      - series: 'node_filesystem_size_bytes{instance="xps",job="node",device="/dev/sda1",fstype="ext4",mountpoint="/var"}'
         values: '100000+0x70'
     alert_rule_test:
       - eval_time: 61m
@@ -170,9 +170,9 @@ tests:
   # Under 10% memory available fires MemoryPressure.
   - interval: 1m
     input_series:
-      - series: 'node_memory_MemAvailable_bytes{instance="xps.fritz.box:9100",job="node"}'
+      - series: 'node_memory_MemAvailable_bytes{instance="xps",job="node"}'
         values: '500+0x30'
-      - series: 'node_memory_MemTotal_bytes{instance="xps.fritz.box:9100",job="node"}'
+      - series: 'node_memory_MemTotal_bytes{instance="xps",job="node"}'
         values: '10000+0x30'
     alert_rule_test:
       - eval_time: 16m
@@ -180,18 +180,18 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: warning
-              instance: xps.fritz.box:9100
+              instance: xps
               job: node
             exp_annotations:
               summary: "Under 10% memory available"
-              description: "xps.fritz.box:9100 has 5% of memory available."
+              description: "xps has 5% of memory available."
 
   # Half the memory available is healthy and must never fire MemoryPressure.
   - interval: 1m
     input_series:
-      - series: 'node_memory_MemAvailable_bytes{instance="xps.fritz.box:9100",job="node"}'
+      - series: 'node_memory_MemAvailable_bytes{instance="xps",job="node"}'
         values: '5000+0x30'
-      - series: 'node_memory_MemTotal_bytes{instance="xps.fritz.box:9100",job="node"}'
+      - series: 'node_memory_MemTotal_bytes{instance="xps",job="node"}'
         values: '10000+0x30'
     alert_rule_test:
       - eval_time: 16m
@@ -201,7 +201,7 @@ tests:
   # A sustained 90C package temperature fires CPUThermalThrottle.
   - interval: 1m
     input_series:
-      - series: 'node_hwmon_temp_celsius{instance="xps.fritz.box:9100",job="node",chip="platform_coretemp_0",sensor="temp1"}'
+      - series: 'node_hwmon_temp_celsius{instance="xps",job="node",chip="platform_coretemp_0",sensor="temp1"}'
         values: '90+0x20'
     alert_rule_test:
       - eval_time: 11m
@@ -209,7 +209,7 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: warning
-              instance: xps.fritz.box:9100
+              instance: xps
               job: node
               chip: platform_coretemp_0
               sensor: temp1
@@ -220,7 +220,7 @@ tests:
   # A cool CPU package must never fire CPUThermalThrottle.
   - interval: 1m
     input_series:
-      - series: 'node_hwmon_temp_celsius{instance="xps.fritz.box:9100",job="node",chip="platform_coretemp_0",sensor="temp1"}'
+      - series: 'node_hwmon_temp_celsius{instance="xps",job="node",chip="platform_coretemp_0",sensor="temp1"}'
         values: '50+0x20'
     alert_rule_test:
       - eval_time: 11m
@@ -231,7 +231,7 @@ tests:
   # NVMe routinely runs past 85C under sustained write.
   - interval: 1m
     input_series:
-      - series: 'node_hwmon_temp_celsius{instance="xps.fritz.box:9100",job="node",chip="nvme_nvme0",sensor="temp1"}'
+      - series: 'node_hwmon_temp_celsius{instance="xps",job="node",chip="nvme_nvme0",sensor="temp1"}'
         values: '90+0x20'
     alert_rule_test:
       - eval_time: 11m
@@ -244,9 +244,9 @@ tests:
   # though nothing else in the file does.
   - interval: 1m
     input_series:
-      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_avail_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '57200-10x420'
-      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_size_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '200000+0x420'
     alert_rule_test:
       - eval_time: 421m
@@ -254,14 +254,14 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: warning
-              instance: xps.fritz.box:9100
+              instance: xps
               job: node
               device: /dev/sda2
               fstype: ext4
               mountpoint: /mnt/storage
             exp_annotations:
               summary: "/mnt/storage is projected to fill within 4 days"
-              description: "Based on the last 6 hours of usage, /mnt/storage on xps.fritz.box:9100 runs out of space within 4 days."
+              description: "Based on the last 6 hours of usage, /mnt/storage on xps runs out of space within 4 days."
       - eval_time: 421m
         alertname: DiskSpaceLow
         exp_alerts: []
@@ -273,9 +273,9 @@ tests:
   # never fire DiskWillFillSoon, no matter how long it is watched.
   - interval: 1m
     input_series:
-      - series: 'node_filesystem_avail_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_avail_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '57200+0x420'
-      - series: 'node_filesystem_size_bytes{instance="xps.fritz.box:9100",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
+      - series: 'node_filesystem_size_bytes{instance="xps",job="node",device="/dev/sda2",fstype="ext4",mountpoint="/mnt/storage"}'
         values: '200000+0x420'
     alert_rule_test:
       - eval_time: 421m
@@ -287,7 +287,7 @@ tests:
   # once the target has been unreachable for the full for: duration.
   - interval: 1m
     input_series:
-      - series: 'up{instance="xps.fritz.box:9100",job="node"}'
+      - series: 'up{instance="xps",job="node"}'
         values: '0+0x15'
     alert_rule_test:
       - eval_time: 9m
@@ -298,16 +298,16 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: warning
-              instance: xps.fritz.box:9100
+              instance: xps
               job: node
             exp_annotations:
-              summary: "node target xps.fritz.box:9100 is down"
-              description: "Prometheus has not been able to scrape xps.fritz.box:9100 for over 10 minutes. Every other rule that depends on metrics from this target has stopped evaluating and gone silent as a result — that silence does not mean things are healthy, it means nothing is being checked."
+              summary: "node target xps is down"
+              description: "Prometheus has not been able to scrape xps for over 10 minutes. Every other rule that depends on metrics from this target has stopped evaluating and gone silent as a result — that silence does not mean things are healthy, it means nothing is being checked."
 
   # A target that is up must never fire TargetDown.
   - interval: 1m
     input_series:
-      - series: 'up{instance="xps.fritz.box:9100",job="node"}'
+      - series: 'up{instance="xps",job="node"}'
         values: '1+0x15'
     alert_rule_test:
       - eval_time: 11m
@@ -317,9 +317,9 @@ tests:
   # A box that booted two minutes ago is news; one up for days is not.
   - interval: 1m
     input_series:
-      - series: 'node_time_seconds{instance="xps.fritz.box:9100",job="node"}'
+      - series: 'node_time_seconds{instance="xps",job="node"}'
         values: '1000000+60x10'
-      - series: 'node_boot_time_seconds{instance="xps.fritz.box:9100",job="node"}'
+      - series: 'node_boot_time_seconds{instance="xps",job="node"}'
         values: '999900+0x10'
     alert_rule_test:
       - eval_time: 1m
@@ -327,10 +327,10 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: info
-              instance: xps.fritz.box:9100
+              instance: xps
               job: node
             exp_annotations:
-              summary: "xps.fritz.box:9100 rebooted"
+              summary: "xps rebooted"
               description: "Uptime is under five minutes. A server that reboots on its own is worth knowing about."
       # Once uptime has passed five minutes, HostRebooted must go silent.
       - eval_time: 10m
