@@ -39,12 +39,11 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "time() - restic_backup_last_success_timestamp_seconds",
+          "expr": "time() - restic_backup_last_success_timestamp_seconds{instance=\"xps\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          },
-          "legendFormat": "A"
+          }
         }
       ],
       "fieldConfig": {
@@ -104,12 +103,11 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "node_time_seconds - node_boot_time_seconds",
+          "expr": "node_time_seconds{instance=\"xps\"} - node_boot_time_seconds{instance=\"xps\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          },
-          "legendFormat": "A"
+          }
         }
       ],
       "fieldConfig": {
@@ -169,7 +167,7 @@
       },
       "targets": [
         {
-          "expr": "100 * node_filesystem_avail_bytes{fstype!~\"tmpfs|ramfs|overlay|squashfs\",mountpoint!=\"/mnt/seagate\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|ramfs|overlay|squashfs\",mountpoint!=\"/mnt/seagate\"}",
+          "expr": "100 * node_filesystem_avail_bytes{instance=\"xps\",fstype!~\"tmpfs|ramfs|overlay|squashfs\",mountpoint!=\"/mnt/seagate\"} / node_filesystem_size_bytes{instance=\"xps\",fstype!~\"tmpfs|ramfs|overlay|squashfs\",mountpoint!=\"/mnt/seagate\"}",
           "legendFormat": "{{mountpoint}}",
           "refId": "A",
           "datasource": {
@@ -249,7 +247,7 @@
       },
       "targets": [
         {
-          "expr": "100 * node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes",
+          "expr": "100 * node_memory_MemAvailable_bytes{instance=\"xps\"} / node_memory_MemTotal_bytes{instance=\"xps\"}",
           "legendFormat": "available",
           "refId": "A",
           "datasource": {
@@ -325,7 +323,7 @@
       },
       "targets": [
         {
-          "expr": "node_hwmon_temp_celsius{chip=\"platform_coretemp_0\"}",
+          "expr": "node_hwmon_temp_celsius{instance=\"xps\",chip=\"platform_coretemp_0\"}",
           "legendFormat": "{{sensor}}",
           "refId": "A",
           "datasource": {
@@ -400,7 +398,7 @@
       },
       "targets": [
         {
-          "expr": "node_load1",
+          "expr": "node_load1{instance=\"xps\"}",
           "legendFormat": "1m",
           "refId": "A",
           "datasource": {
@@ -409,7 +407,7 @@
           }
         },
         {
-          "expr": "node_load5",
+          "expr": "node_load5{instance=\"xps\"}",
           "legendFormat": "5m",
           "refId": "B",
           "datasource": {
@@ -418,7 +416,7 @@
           }
         },
         {
-          "expr": "node_load15",
+          "expr": "node_load15{instance=\"xps\"}",
           "legendFormat": "15m",
           "refId": "C",
           "datasource": {
