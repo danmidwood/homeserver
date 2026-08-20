@@ -233,13 +233,27 @@ rule on it replaces several.
 |---|---|---|
 | `SmartHealthFailed` | the drive's own overall health self-assessment fails | critical |
 | `SmartPendingSectors` | sectors awaiting reallocation, above zero | critical |
+| `SmartOfflineUncorrectable` | sectors unreadable even with error correction, above zero | critical |
 | `SmartReallocatedSectors` | reallocated sector count above zero | warning |
 | `SmartDiskTemperature` | drive above 55°C for 15m | warning |
 | `NvmeCriticalWarning` | NVMe `critical_warning` bitfield non-zero | critical |
 | `NvmeMediaErrors` | NVMe media and data integrity errors above zero | critical |
 | `NvmeWearHigh` | NVMe `percentage_used` above 80% | warning |
 | `SmartCollectorFailed` | the collector script itself failed or stopped running | warning |
+| `SmartMetricsMissing` | no SMART metrics are exported at all | warning |
+| `SmartMetricsStale` | the collector's last-run timestamp is over an hour old | warning |
 | `MdArrayFailed` | `md0` has zero active disks | critical |
+
+The three collector-health rules are not redundant with one another.
+`SmartCollectorFailed` watches a value — the gauge the collector itself
+writes on every run — so it only speaks once the collector has run and
+recorded a failure. `SmartMetricsMissing` watches for the series being
+absent entirely, catching the collector never having run in the first
+place. `SmartMetricsStale` catches the case that defeats both: a collector
+that silently stopped running, whose last written file keeps being served
+forever still saying success — no failed value to trip `SmartCollectorFailed`,
+no absent series to trip `SmartMetricsMissing`, only a last-run timestamp
+quietly falling behind that nothing else would notice.
 
 `MdArrayFailed` needs no new sensor: node-exporter already exports
 `node_md_disks{device="md0",state="active"}`. It deliberately does NOT alert
@@ -468,7 +482,7 @@ Six increments, each independently useful and independently revertable.
 |---|---|---|
 | 1 | Prometheus containerised, Alertmanager, Telegram receiver, host health rules, `TargetDown`, Watchdog and heartbeat | Prometheus (replaced), Alertmanager — delivered 2026-08-19 |
 | 2 | Backup integrity: textfile collector, staleness rules, `OnFailure=` handler | none — delivered 2026-08-20 |
-| 3 | Disk health: smartmontools, textfile script and timer, SMART rules | none |
+| 3 | Disk health: smartmontools, textfile script and timer, SMART rules | none — delivered 2026-08-20 |
 | 4 | Container health: cAdvisor and rules | cAdvisor |
 | 5 | Reachability and TLS: blackbox exporter and rules | blackbox |
 | 6 | Diun image-update notifications | Diun |
