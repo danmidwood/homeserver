@@ -477,6 +477,30 @@ expendable.
   `no_log`** in `roles/alertmanager/tasks/main.yml`'s "Template Alertmanager
   configuration" task, so they can appear in `--diff` or `-v` output even
   though the bot token itself is protected.
+- **`backup-alert.service` has no `OnFailure=` of its own**, so if the
+  handler itself dies nothing notifies. A general fix needs node-exporter's
+  `systemd` collector, which is not enabled.
+- **A `BackupFailed` push is lost outright if Alertmanager or Telegram is
+  unavailable during its 15-minute `endsAt` window**; only `BackupStale`
+  backstops it, up to 26 hours later.
+- **Nothing checks what a backup actually contained.** A snapshot that is
+  legitimately near-empty — an unmounted path, a zero-byte database dump
+  from a successful `docker exec` — writes a fresh timestamp and raises no
+  alert. `restic backup --json` already emits `files_processed` and
+  `total_bytes_processed` at no API cost, so a floor on those would close
+  it.
+- **On a freshly provisioned host, the timer is enabled but the service is
+  not run**, so with `OnCalendar=daily` the first backup is next midnight.
+  `BackupMetricMissing` fires an hour after Prometheus starts and
+  re-notifies every four hours until then — up to six critical messages on
+  a healthy new machine.
+- **`restic-backup.sh` writes into a directory created by the `prometheus`
+  role and does not create it itself.** Playbook ordering makes this safe
+  today, but a role-limited run could invert it, producing a `BackupFailed`
+  alert for a backup that actually succeeded.
+- **The alert sends up to 800 bytes of backup journal output to Telegram.**
+  Fine for a private chat; a future change of receiver to a group or shared
+  channel would make it a disclosure decision.
 
 ## Phase 2: inbound Telegram bot
 

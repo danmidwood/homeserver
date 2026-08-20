@@ -4,7 +4,12 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
-  # A backup that succeeded 30 hours ago is stale.
+  # A future-dated timestamp (recorded value far ahead of promtool's clock,
+  # as would happen if the host's clock was wrong when the backup ran) must
+  # fire BackupTimestampInFuture. This series used to be asserted to leave
+  # BackupStale silent, which is true but vacuous — that assertion still
+  # passes even with BackupStale deleted entirely, since it never exercises
+  # the rule that actually matters for a future-dated timestamp.
   # promtool's clock starts at 0, so the series carries a large absolute
   # unix timestamp and we evaluate far enough in for time() to exceed it.
   - interval: 1h
@@ -13,11 +18,27 @@ tests:
         values: '1000000+0x40'
     alert_rule_test:
       # At 30h of evaluation time, time() is 108000 and the recorded
-      # timestamp is 1000000 — not yet stale, because the recorded value
-      # is in the future relative to promtool's clock. See Step 3 for why
-      # the rule is written to tolerate this.
+      # timestamp is 1000000, i.e. 892000s (10d 7h 46m 40s) ahead of the
+      # clock — comfortably over the 1h threshold.
       - eval_time: 30h
-        alertname: BackupStale
+        alertname: BackupTimestampInFuture
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              instance: xps
+              job: node
+            exp_annotations:
+              summary: "Backup timestamp is in the future"
+              description: "The last recorded restic backup success is 10d 7h 46m 40s ahead of this server's clock. While this holds, BackupStale cannot fire and the backup is effectively unmonitored. The likely cause is the host's clock being wrong — check for a dead RTC battery and whether systemd-timesyncd has synced — not that the backup is somehow ahead of schedule."
+
+  # A normal, past timestamp must leave BackupTimestampInFuture silent.
+  - interval: 1h
+    input_series:
+      - series: 'restic_backup_last_success_timestamp_seconds{instance="xps",job="node"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: BackupTimestampInFuture
         exp_alerts: []
 
   # A backup whose timestamp is 27 hours behind promtool's clock IS stale.

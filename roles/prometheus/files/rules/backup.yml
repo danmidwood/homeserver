@@ -2,9 +2,10 @@ groups:
   - name: backup
     rules:
       # The offsite backup to Backblaze B2 is the reason this whole
-      # monitoring stack exists. These three rules cover the three ways it
-      # can let you down: it failed, it stopped running, or it was never
-      # being watched in the first place.
+      # monitoring stack exists. These four rules cover the ways it can let
+      # you down: it failed, it stopped running, its own staleness check was
+      # silently defeated by a bad clock, or it was never being watched in
+      # the first place.
 
       - alert: BackupStale
         # 26 hours, not 24: the timer is OnCalendar=daily, so a run that
@@ -15,6 +16,24 @@ groups:
         annotations:
           summary: "No successful backup in over 26 hours"
           description: "The last successful restic backup to B2 finished {{ $value | humanizeDuration }} ago. The daily timer may have failed to run at all — check `systemctl list-timers restic-backup.timer` and `journalctl -u restic-backup.service`."
+
+      - alert: BackupTimestampInFuture
+        # If the recorded success timestamp is ever ahead of Prometheus's
+        # clock, BackupStale's subtraction goes negative and stays negative
+        # forever — the alert that exists to catch a stalled backup can
+        # never fire again, and BackupMetricMissing stays quiet too because
+        # the series is present. This is realistic here: END is the host's
+        # wall clock, this is a 2016 laptop, and a boot with a dead RTC
+        # before systemd-timesyncd corrects the time writes a far-future
+        # value into a file that then persists across reboots. A dedicated
+        # rule, rather than a second term in BackupStale's expression, keeps
+        # each alert's annotation truthful about what it actually detected.
+        expr: restic_backup_last_success_timestamp_seconds - time() > 3600
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backup timestamp is in the future"
+          description: "The last recorded restic backup success is {{ $value | humanizeDuration }} ahead of this server's clock. While this holds, BackupStale cannot fire and the backup is effectively unmonitored. The likely cause is the host's clock being wrong — check for a dead RTC battery and whether systemd-timesyncd has synced — not that the backup is somehow ahead of schedule."
 
       - alert: BackupMetricMissing
         # Not redundant with BackupStale. BackupStale compares a timestamp;

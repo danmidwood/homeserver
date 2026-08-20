@@ -9,3 +9,11 @@ Type=oneshot
 Environment=HOME=/root
 EnvironmentFile=/etc/restic/env
 ExecStart=/usr/local/bin/restic-backup.sh
+# systemd disables the start timeout by default for Type=oneshot
+# (TimeoutStartUSec is otherwise "infinity"), so a restic upload wedged on a
+# dead connection would hang forever: the unit stays "activating", the next
+# day's timer trigger is skipped because it's already active, OnFailure=
+# never runs, and only BackupStale (up to 26h later) would ever notice.
+# Recent runs take ~13s, so 6h is enormously generous while still turning a
+# silent hang into a real BackupFailed alert with a journal tail.
+TimeoutStartSec=6h

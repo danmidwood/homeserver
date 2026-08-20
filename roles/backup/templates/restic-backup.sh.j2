@@ -28,11 +28,18 @@ END=$(date +%s)
 # Written to a temporary file and renamed, because a rename within the same
 # filesystem is atomic: node_exporter can never scrape a half-written file.
 # The temporary name must not end in .prom or node_exporter would read it.
+#
+# restic_backup_duration_seconds: no alert rule reads this metric, it exists
+# purely for Grafana. START is taken before the database dumps (above), so
+# this covers dumps plus upload, not restic's own runtime alone — which is
+# the operationally useful figure, since it's what a unit start timeout
+# would be sized against. The HELP text below says so, rather than the
+# "restic backup" claim it used to make.
 cat > "${METRICS_FILE}.tmp" <<METRICS
 # HELP restic_backup_last_success_timestamp_seconds Unix time of the last successful restic backup to B2.
 # TYPE restic_backup_last_success_timestamp_seconds gauge
 restic_backup_last_success_timestamp_seconds ${END}
-# HELP restic_backup_duration_seconds Wall-clock seconds taken by the last successful restic backup.
+# HELP restic_backup_duration_seconds Wall-clock seconds from the start of the database dumps to the end of the restic upload, for the last successful backup.
 # TYPE restic_backup_duration_seconds gauge
 restic_backup_duration_seconds $((END - START))
 METRICS
