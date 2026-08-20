@@ -8,3 +8,7 @@
   ansible.builtin.systemd:
     name: prometheus-node-exporter
     state: restarted
+
+- name: Reload systemd for SMART collector
+  ansible.builtin.systemd:
+    daemon_reload: true

@@ -31,9 +31,12 @@
     path: /var/lib/prometheus
     state: absent
 
-- name: Ensure node-exporter is installed
+- name: Ensure node-exporter and smartmontools are installed
+  # smartmontools provides smartctl, which the SMART collector runs.
   ansible.builtin.package:
-    name: prometheus-node-exporter
+    name:
+      - prometheus-node-exporter
+      - smartmontools
     state: present
 
 - name: Create the node-exporter textfile collector directory
@@ -57,6 +60,42 @@
 - name: Start and enable node-exporter
   ansible.builtin.systemd:
     name: prometheus-node-exporter
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Template the SMART collector
+  ansible.builtin.template:
+    src: smart-metrics.sh.j2
+    dest: /usr/local/bin/smart-metrics.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the SMART collector unit
+  ansible.builtin.copy:
+    src: smart-metrics.service
+    dest: /etc/systemd/system/smart-metrics.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for SMART collector
+
+- name: Install the SMART collector timer
+  ansible.builtin.copy:
+    src: smart-metrics.timer
+    dest: /etc/systemd/system/smart-metrics.timer
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for SMART collector
+
+- name: Flush handlers so systemd sees the new units before enabling the timer
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the SMART collector timer
+  ansible.builtin.systemd:
+    name: smart-metrics.timer
     enabled: true
     state: started
     daemon_reload: true

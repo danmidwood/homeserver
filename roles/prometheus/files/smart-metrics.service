@@ -1,0 +1,8 @@
+[Unit]
+Description=Collect SMART disk health metrics for Prometheus
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/smart-metrics.sh
+# smartctl needs root to issue device commands.
+User=root

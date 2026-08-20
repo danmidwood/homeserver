@@ -1,0 +1,90 @@
+#!/bin/bash
+# Writes SMART health metrics for an explicit list of devices into
+# node-exporter's textfile collector directory.
+#
+# No `set -e`: one unreadable disk must not stop the others being reported,
+# and it must not stop smart_collector_success being written — that gauge is
+# how a broken collector becomes visible instead of looking like healthy
+# silence.
+set -uo pipefail
+
+TEXTFILE_DIR=/var/lib/node_exporter/textfile_collector
+OUT="${TEXTFILE_DIR}/smart.prom"
+# Must not end in .prom, or node-exporter would scrape it half-written.
+TMP="${OUT}.tmp"
+
+DEVICES=(
+{% for d in smart_devices %}
+  "{{ d.device }}|{{ d.type }}"
+{% endfor %}
+)
+
+declare -A MODEL HEALTH TEMP REALLOC PENDING UNCORR NCRIT NUSED NMEDIA
+COLLECTOR_SUCCESS=1
+
+for entry in "${DEVICES[@]}"; do
+  dev="${entry%%|*}"
+  dtype="${entry##*|}"
+
+  # smartctl's exit status is a bitfield that is non-zero for benign
+  # conditions too, so success is judged on the JSON parsing instead.
+  json=$(smartctl --json=c -d "$dtype" -i -H -A "$dev" 2>/dev/null)
+  if ! printf '%s' "$json" | jq -e 'has("smart_status")' >/dev/null 2>&1; then
+    COLLECTOR_SUCCESS=0
+    continue
+  fi
+
+  MODEL[$dev]=$(printf '%s' "$json" | jq -r '.model_name // "unknown"')
+  HEALTH[$dev]=$(printf '%s' "$json" | jq -r 'if .smart_status.passed then 1 else 0 end')
+  TEMP[$dev]=$(printf '%s' "$json" | jq -r '.temperature.current // empty')
+
+  if [ "$dtype" = "nvme" ]; then
+    NCRIT[$dev]=$(printf '%s' "$json" | jq -r '.nvme_smart_health_information_log.critical_warning // empty')
+    NUSED[$dev]=$(printf '%s' "$json" | jq -r '.nvme_smart_health_information_log.percentage_used // empty')
+    NMEDIA[$dev]=$(printf '%s' "$json" | jq -r '.nvme_smart_health_information_log.media_errors // empty')
+  else
+    REALLOC[$dev]=$(printf '%s' "$json" | jq -r '[.ata_smart_attributes.table[]? | select(.id == 5) | .raw.value] | first // empty')
+    PENDING[$dev]=$(printf '%s' "$json" | jq -r '[.ata_smart_attributes.table[]? | select(.id == 197) | .raw.value] | first // empty')
+    UNCORR[$dev]=$(printf '%s' "$json" | jq -r '[.ata_smart_attributes.table[]? | select(.id == 198) | .raw.value] | first // empty')
+  fi
+done
+
+# Samples for one metric name must be contiguous in the exposition format,
+# so each family is emitted in full before the next begins.
+emit() {
+  local name=$1 help=$2 arrname=$3
+  local -n values=$arrname
+  [ -z "${values[*]+x}" ] && return 0
+  printf '# HELP %s %s\n' "$name" "$help"
+  printf '# TYPE %s gauge\n' "$name"
+  local dev
+  for dev in "${!values[@]}"; do
+    # An attribute the drive does not report is skipped rather than written
+    # with an empty value, which would make the whole file unparseable.
+    [ -z "${values[$dev]}" ] && continue
+    printf '%s{device="%s",model="%s"} %s\n' "$name" "$dev" "${MODEL[$dev]}" "${values[$dev]}"
+  done
+}
+
+# Captured once collection has finished, so the gauge reflects when this run
+# completed rather than when it started.
+RUN_TIMESTAMP=$(date +%s)
+
+{
+  emit smart_device_health_ok "1 if the drive passes its own SMART health self-assessment." HEALTH
+  emit smart_temperature_celsius "Current drive temperature in Celsius." TEMP
+  emit smart_ata_reallocated_sectors "ATA attribute 5: sectors remapped to spares after a failure." REALLOC
+  emit smart_ata_pending_sectors "ATA attribute 197: unreadable sectors awaiting reallocation." PENDING
+  emit smart_ata_offline_uncorrectable "ATA attribute 198: sectors that could not be read even with error correction." UNCORR
+  emit smart_nvme_critical_warning "NVMe critical warning bitfield; non-zero means spare exhaustion, temperature excursion, degraded reliability or read-only fallback." NCRIT
+  emit smart_nvme_percentage_used "NVMe rated write endurance consumed, as a percentage." NUSED
+  emit smart_nvme_media_errors "NVMe media and data integrity errors." NMEDIA
+  printf '# HELP smart_collector_success 1 if SMART was read successfully for every configured device.\n'
+  printf '# TYPE smart_collector_success gauge\n'
+  printf 'smart_collector_success %s\n' "$COLLECTOR_SUCCESS"
+  printf '# HELP smart_collector_last_run_timestamp_seconds Unix time at which the SMART collector last completed a run.\n'
+  printf '# TYPE smart_collector_last_run_timestamp_seconds gauge\n'
+  printf 'smart_collector_last_run_timestamp_seconds %s\n' "$RUN_TIMESTAMP"
+} > "$TMP"
+
+mv "$TMP" "$OUT"

@@ -1,0 +1,11 @@
+# Explicit, not scanned. `smartctl --scan` on this host returns /dev/sda and
+# /dev/nvme0 and misses /dev/sdb entirely — the 8TB array disk holding the
+# photo library, which answers SMART only when told `-d sat`. Scanning would
+# monitor the wrong disks and report healthy forever.
+#
+# /dev/sda is omitted deliberately: its USB bridge rejects SMART commands.
+smart_devices:
+  - device: /dev/sdb
+    type: sat
+  - device: /dev/nvme0n1
+    type: nvme
