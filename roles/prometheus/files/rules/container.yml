@@ -10,9 +10,15 @@ groups:
         # cAdvisor being down would make every expected container look
         # missing at once and produce a wall of alerts, when the real fault
         # is a single dead sensor. ContainerMetricsMissing covers that case.
+        # The guard filters out cAdvisor's root cgroup series (id="/", no
+        # name label, sourced from /sys rather than the Docker socket): that
+        # series keeps being reported even when cAdvisor has lost the Docker
+        # API, so an unfiltered count() cannot tell a healthy cAdvisor from
+        # one that has lost Docker but is still reporting the machine
+        # cgroup, and would leave the guard open during exactly that failure.
         expr: |
           (container_expected == 1 unless on(name) container_last_seen)
-            and on() (count(container_last_seen) > 0)
+            and on() (count(container_last_seen{name!=""}) > 0)
         for: 5m
         labels:
           severity: critical
@@ -44,8 +50,12 @@ groups:
         # cAdvisor is a scrape target, so TargetDown catches it going away
         # entirely. This catches the subtler case where cAdvisor is up and
         # scrapeable but reporting no containers — a lost Docker socket or a
-        # permissions change — which TargetDown cannot see.
-        expr: absent(container_last_seen)
+        # permissions change — which TargetDown cannot see. The {name!=""}
+        # filter matters here too: cAdvisor still reports a root cgroup
+        # series with no name label (sourced from /sys) even after losing
+        # the Docker API, so an unfiltered absent() would stay silent
+        # through exactly the partial failure this alert exists to catch.
+        expr: absent(container_last_seen{name!=""})
         for: 10m
         labels:
           severity: warning

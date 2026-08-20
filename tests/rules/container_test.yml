@@ -12,9 +12,9 @@ tests:
   # window either.
   - interval: 1m
     input_series:
-      - series: 'container_expected{name="vaultwarden"}'
+      - series: 'container_expected{name="vaultwarden",instance="xps",job="node"}'
         values: '1+0x80'
-      - series: 'container_expected{name="plex"}'
+      - series: 'container_expected{name="plex",instance="xps",job="node"}'
         values: '1+0x80'
       - series: 'container_last_seen{name="vaultwarden",instance="xps",job="cadvisor"}'
         values: '1000+60x80'
@@ -38,9 +38,9 @@ tests:
   # This is the case the whole increment exists for.
   - interval: 1m
     input_series:
-      - series: 'container_expected{name="vaultwarden"}'
+      - series: 'container_expected{name="vaultwarden",instance="xps",job="node"}'
         values: '1+0x30'
-      - series: 'container_expected{name="plex"}'
+      - series: 'container_expected{name="plex",instance="xps",job="node"}'
         values: '1+0x30'
       - series: 'container_last_seen{name="plex",instance="xps",job="cadvisor"}'
         values: '1000+60x30'
@@ -54,6 +54,8 @@ tests:
           - exp_labels:
               severity: critical
               name: vaultwarden
+              instance: xps
+              job: node
             exp_annotations:
               summary: "Container vaultwarden is not running"
               description: "vaultwarden is on the expected list for this host but cAdvisor has not reported it for over 5 minutes. Check `docker ps -a` and `docker logs vaultwarden`."
@@ -62,11 +64,43 @@ tests:
   # must NOT fire seventeen times; ContainerMetricsMissing fires once instead.
   - interval: 1m
     input_series:
-      - series: 'container_expected{name="vaultwarden"}'
+      - series: 'container_expected{name="vaultwarden",instance="xps",job="node"}'
         values: '1+0x30'
-      - series: 'container_expected{name="plex"}'
+      - series: 'container_expected{name="plex",instance="xps",job="node"}'
         values: '1+0x30'
     alert_rule_test:
+      - eval_time: 20m
+        alertname: ContainerMissing
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: ContainerMetricsMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "cAdvisor is reporting no containers"
+              description: "No container_last_seen metric exists, so ContainerMissing cannot fire and no container on this host is being watched. Check `docker logs cadvisor` and that it can still read the Docker socket."
+
+  # cAdvisor still scrapeable but has lost the Docker API: it keeps
+  # reporting only the root cgroup (id="/", no name label, sourced from
+  # /sys, not the Docker socket), never a named container. Without the
+  # {name!=""} filters this nameless series looks like "cAdvisor is fine"
+  # to both the ContainerMissing guard and ContainerMetricsMissing, and
+  # ContainerMissing would fire for every expected container instead of a
+  # single ContainerMetricsMissing explaining the real fault.
+  - interval: 1m
+    input_series:
+      - series: 'container_expected{name="vaultwarden",instance="xps",job="node"}'
+        values: '1+0x30'
+      - series: 'container_expected{name="plex",instance="xps",job="node"}'
+        values: '1+0x30'
+      - series: 'container_last_seen{id="/",instance="xps",job="cadvisor"}'
+        values: '1000+60x30'
+    alert_rule_test:
+      # Evaluated at 20m: well past ContainerMissing's for: 5m, so if the
+      # {name!=""} guard were missing this assertion would catch it — the
+      # unfiltered guard would have stayed open and the LHS would have
+      # matched both containers from ~t=0, well within the pending window.
       - eval_time: 20m
         alertname: ContainerMissing
         exp_alerts: []
