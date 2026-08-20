@@ -336,3 +336,68 @@ tests:
       - eval_time: 10m
         alertname: HostRebooted
         exp_alerts: []
+
+  # A clock that has stopped being disciplined by NTP. This is not a
+  # cosmetic complaint: BackupStale, SmartMetricsStale and
+  # BackupTimestampInFuture all compare a recorded timestamp against
+  # time(), so a clock that drifts or jumps can silence them while every
+  # indicator stays green.
+  - interval: 1m
+    input_series:
+      - series: 'node_timex_sync_status{instance="xps",job="node"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ClockNotSynchronised
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: ClockNotSynchronised
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: xps
+              job: node
+            exp_annotations:
+              summary: "xps has no time synchronisation"
+              description: "The kernel reports the clock is not being disciplined by NTP, so it is free-running and will drift further the longer this lasts. Every alert that compares a timestamp against the current time can be silenced by a wrong clock. Check `timedatectl` and `systemctl status systemd-timesyncd`."
+
+  # A synchronised clock must never fire it, checked well past the for:.
+  - interval: 1m
+    input_series:
+      - series: 'node_timex_sync_status{instance="xps",job="node"}'
+        values: '1+0x40'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: ClockNotSynchronised
+        exp_alerts: []
+
+  # A malformed .prom file makes node-exporter drop EVERY textfile metric,
+  # so this one rule guards both the backup and the SMART monitoring.
+  - interval: 1m
+    input_series:
+      - series: 'node_textfile_scrape_error{instance="xps",job="node"}'
+        values: '1+0x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TextfileCollectorError
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: TextfileCollectorError
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: xps
+              job: node
+            exp_annotations:
+              summary: "node-exporter cannot read a textfile metric file"
+              description: "A file in /var/lib/node_exporter/textfile_collector failed to parse, and node-exporter responds by dropping ALL textfile metrics — so the backup and SMART rules are currently evaluating nothing. Check that directory for a malformed or partially written .prom file."
+
+  # Parsing cleanly must never fire it, checked well past the for:.
+  - interval: 1m
+    input_series:
+      - series: 'node_textfile_scrape_error{instance="xps",job="node"}'
+        values: '0+0x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: TextfileCollectorError
+        exp_alerts: []

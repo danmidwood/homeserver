@@ -94,3 +94,33 @@ groups:
         annotations:
           summary: "{{ $labels.job }} target {{ $labels.instance }} is down"
           description: "Prometheus has not been able to scrape {{ $labels.instance }} for over 10 minutes. Every other rule that depends on metrics from this target has stopped evaluating and gone silent as a result — that silence does not mean things are healthy, it means nothing is being checked."
+
+      - alert: ClockNotSynchronised
+        # Not a cosmetic complaint. BackupStale, SmartMetricsStale and
+        # BackupTimestampInFuture all compare a recorded timestamp against
+        # time(), so a clock that drifts or jumps can silence them while
+        # every indicator stays green. This host ran for months with no NTP
+        # at all and had drifted nearly nine minutes before anyone noticed,
+        # which is also long enough to break Vaultwarden's TOTP codes.
+        # 30m rather than something shorter: a brief resync gap after boot
+        # is normal and must not page.
+        expr: node_timex_sync_status == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} has no time synchronisation"
+          description: "The kernel reports the clock is not being disciplined by NTP, so it is free-running and will drift further the longer this lasts. Every alert that compares a timestamp against the current time can be silenced by a wrong clock. Check `timedatectl` and `systemctl status systemd-timesyncd`."
+
+      - alert: TextfileCollectorError
+        # node-exporter drops EVERY textfile metric when any one file fails
+        # to parse, so a single malformed file blinds both the backup rules
+        # and the SMART rules at once. This fires in 15 minutes; the
+        # absence rules that would eventually notice take an hour.
+        expr: node_textfile_scrape_error == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "node-exporter cannot read a textfile metric file"
+          description: "A file in /var/lib/node_exporter/textfile_collector failed to parse, and node-exporter responds by dropping ALL textfile metrics — so the backup and SMART rules are currently evaluating nothing. Check that directory for a malformed or partially written .prom file."

@@ -193,6 +193,8 @@ and does not affect any other part of this design.
 | `MemoryPressure` | under 10% `MemAvailable` for 15m | warning |
 | `CPUThermalThrottle` | over 85°C for 10m on any sensor under `chip="platform_coretemp_0"` — package and per-core alike, since the server is a laptop | warning |
 | `HostRebooted` | uptime under 5m — a server that reboots by itself is news | info |
+| `ClockNotSynchronised` | the kernel reports the clock is not disciplined by NTP, for 30m | warning |
+| `TextfileCollectorError` | node-exporter cannot parse a textfile metric file, for 15m | warning |
 
 The disk rules watch every real filesystem rather than an enumerated list, so a
 mount added later is covered without editing rules. Pseudo-filesystems are
@@ -520,8 +522,6 @@ expendable.
   eventually cost real money and needs addressing separately.
 - **No log aggregation.** Alerts will say a container is restart-looping but
   not why; diagnosis still means SSH and `docker logs`.
-- **No clock-drift alert**, though node-exporter already exports
-  `node_timex_sync_status` and a rule could be added cheaply.
 - **A missing or typo'd `severity` label routes to the default Telegram
   receiver**, which is `telegram-warning`, so a future rule that gets its
   severity wrong is delivered silently mislabelled as WARNING rather than
@@ -529,10 +529,6 @@ expendable.
 - **`/var` under 5% free double-fires.** It satisfies both `DiskSpaceCritical`
   (which does not exclude `/var`) and `VarSpaceCritical`, so one condition
   sends two Telegram messages.
-- **`heartbeat_ping_url` and `telegram_chat_id` are rendered without
-  `no_log`** in `roles/alertmanager/tasks/main.yml`'s "Template Alertmanager
-  configuration" task, so they can appear in `--diff` or `-v` output even
-  though the bot token itself is protected.
 - **`backup-alert.service` has no `OnFailure=` of its own**, so if the
   handler itself dies nothing notifies. A general fix needs node-exporter's
   `systemd` collector, which is not enabled.
@@ -560,10 +556,6 @@ expendable.
 - **The device list is pinned to specific disks by id**, so a replacement
   drive is not monitored until the list is updated — deliberately failing
   loudly rather than silently matching whatever occupies a kernel name.
-- **`node_textfile_scrape_error` has no rule**, though it is the direct
-  signal that a `.prom` file is malformed and it guards both the SMART and
-  the backup metrics. A malformed file is currently only inferred an hour
-  later via the absence rules.
 - **One 55°C temperature threshold covers both a spinning disk and an
   NVMe**, and NVMe composite temperatures routinely run hotter under load,
   so this may need splitting by metric family before it becomes a chronic

@@ -41,6 +41,12 @@
     owner: '65534'
     group: '65534'
     mode: '0640'
+  # The rendered file carries telegram_chat_id and the Healthchecks ping
+  # URL, which is itself a bearer credential. Without this they appear in
+  # --diff and -v output. The cost is that a failure to render this
+  # template reports without detail; the token file beside it is already
+  # protected the same way.
+  no_log: true
   notify: Restart Alertmanager
 
 - name: Pull the Alertmanager image
