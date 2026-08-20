@@ -1,0 +1,19 @@
+apiVersion: 1
+
+# Grafana needs the provider definition and the dashboard JSON in SEPARATE
+# directories. If the JSON sits alongside this file, Grafana tries to parse
+# this YAML as a dashboard and logs errors on every scan.
+providers:
+  - name: homeserver
+    orgId: 1
+    type: file
+    # Dashboards are version-controlled, so the file is the source of truth.
+    # UI edits are refused rather than silently diverging from the repo.
+    allowUiUpdates: false
+    # Removes dashboards from Grafana when their file is deleted from the
+    # repo, so the running instance matches what is committed.
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

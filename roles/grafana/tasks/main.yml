@@ -20,6 +20,62 @@
     mode: '0644'
   notify: Restart Grafana
 
+- name: Create Grafana dashboard provisioning directory
+  ansible.builtin.file:
+    path: /mnt/storage/config/grafana/provisioning/dashboards
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create Grafana dashboards directory
+  # Deliberately NOT inside provisioning/: Grafana would try to parse the
+  # provider YAML as a dashboard and log errors on every scan.
+  ansible.builtin.file:
+    path: /mnt/storage/config/grafana/dashboards
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Provision the dashboard provider
+  ansible.builtin.copy:
+    src: dashboard-provider.yml
+    dest: /mnt/storage/config/grafana/provisioning/dashboards/homeserver.yml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Grafana
+
+- name: Copy dashboards
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/mnt/storage/config/grafana/dashboards/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: '0644'
+  with_fileglob:
+    - "dashboards/*.json"
+  notify: Restart Grafana
+
+- name: Find deployed dashboards
+  ansible.builtin.find:
+    paths: /mnt/storage/config/grafana/dashboards
+    patterns: "*.json"
+  register: grafana_deployed_dashboards
+
+- name: Remove dashboards no longer in the repository
+  # The copy above only ever adds or updates. Without this, a dashboard
+  # renamed or deleted from the repo lingers on the server forever.
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  with_items: "{{ grafana_deployed_dashboards.files }}"
+  when: (item.path | basename) not in grafana_repo_dashboards
+  vars:
+    grafana_repo_dashboards: "{{ query('fileglob', role_path + '/files/dashboards/*.json') | map('basename') | list }}"
+  notify: Restart Grafana
+
 - name: Run Grafana container
   community.docker.docker_container:
     name: "grafana"
@@ -31,6 +87,8 @@
     volumes:
       - grafana_data:/var/lib/grafana
       - /mnt/storage/config/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - /mnt/storage/config/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - /mnt/storage/config/grafana/dashboards:/etc/grafana/dashboards:ro
     env:
       GF_SECURITY_ADMIN_USER: "admin"
       GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
