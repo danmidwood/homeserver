@@ -308,6 +308,7 @@ sensor in this design with no native package worth using.
 | `ContainerMissing` | a container on the expected list is no longer reported, for 5m | critical |
 | `ContainerRestartLoop` | more than 3 starts in an hour | warning |
 | `ContainerOOMKilled` | an OOM kill event | warning |
+| `ContainerMetricsMissing` | cAdvisor is up but reporting no containers | warning |
 | `ContainerExpectedMissing` | the expected-container list itself is not being exported | warning |
 
 **The expected list is data, not rule text.** `ContainerMissing` has to know
@@ -346,7 +347,10 @@ metrics is written here too. cAdvisor is third-party: it decides its own
 metric names, and whether `container_oom_events_total` exists at all depends
 on the kernel and the cAdvisor version. Writing rules against assumed names
 risks a rule that matches nothing while its unit tests pass, so the first
-task deploys cAdvisor and inventories what it genuinely exports.
+task deploys cAdvisor and inventories what it genuinely exports. That
+inventory found `container_oom_events_total` present and non-zero under the
+unprivileged configuration with `/dev/kmsg` mounted, so declining
+`privileged: true` cost nothing.
 
 ### Reachability and TLS — blackbox exporter
 
@@ -536,7 +540,7 @@ Six increments, each independently useful and independently revertable.
 | 1 | Prometheus containerised, Alertmanager, Telegram receiver, host health rules, `TargetDown`, Watchdog and heartbeat | Prometheus (replaced), Alertmanager — delivered 2026-08-19 |
 | 2 | Backup integrity: textfile collector, staleness rules, `OnFailure=` handler | none — delivered 2026-08-20 |
 | 3 | Disk health: smartmontools, textfile script and timer, SMART rules | none — delivered 2026-08-20 |
-| 4 | Container health: cAdvisor and rules | cAdvisor |
+| 4 | Container health: cAdvisor and rules | cAdvisor — delivered 2026-08-20 |
 | 5 | Reachability and TLS: blackbox exporter and rules | blackbox |
 | 6 | Diun image-update notifications | Diun |
 
