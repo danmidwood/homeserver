@@ -468,8 +468,6 @@ expendable.
   receiver**, which is `telegram-warning`, so a future rule that gets its
   severity wrong is delivered silently mislabelled as WARNING rather than
   being obviously misrouted or dropped.
-- **Grafana dashboards are not in version control.** A fresh host comes up
-  with a working Prometheus datasource and no dashboards to look at.
 - **`/var` under 5% free double-fires.** It satisfies both `DiskSpaceCritical`
   (which does not exclude `/var`) and `VarSpaceCritical`, so one condition
   sends two Telegram messages.
