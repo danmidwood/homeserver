@@ -1,0 +1,65 @@
+groups:
+  - name: container
+    rules:
+      # Sixteen services run on this host as containers. Before these rules
+      # existed, one dying was invisible until someone tried to use it.
+
+      - alert: ContainerMissing
+        # The expected list comes from a metric Ansible writes, so this rule
+        # stays static and testable. The trailing guard matters: without it,
+        # cAdvisor being down would make every expected container look
+        # missing at once and produce a wall of alerts, when the real fault
+        # is a single dead sensor. ContainerMetricsMissing covers that case.
+        expr: |
+          (container_expected == 1 unless on(name) container_last_seen)
+            and on() (count(container_last_seen) > 0)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} is not running"
+          description: "{{ $labels.name }} is on the expected list for this host but cAdvisor has not reported it for over 5 minutes. Check `docker ps -a` and `docker logs {{ $labels.name }}`."
+
+      - alert: ContainerRestartLoop
+        # container_start_time_seconds changes value on every start, so
+        # counting its changes counts restarts.
+        expr: changes(container_start_time_seconds{name!=""}[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} has restarted {{ $value }} times in an hour"
+          description: "{{ $labels.name }} keeps restarting, which usually means it is crashing on startup. Docker's restart policy will keep retrying indefinitely, so this can continue unnoticed. Check `docker logs {{ $labels.name }}`."
+
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total{name!=""}[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} was OOM-killed"
+          description: "The kernel killed a process in {{ $labels.name }} for running the host out of memory. The container may have restarted and appear healthy while having lost work."
+
+      - alert: ContainerMetricsMissing
+        # cAdvisor is a scrape target, so TargetDown catches it going away
+        # entirely. This catches the subtler case where cAdvisor is up and
+        # scrapeable but reporting no containers — a lost Docker socket or a
+        # permissions change — which TargetDown cannot see.
+        expr: absent(container_last_seen)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "cAdvisor is reporting no containers"
+          description: "No container_last_seen metric exists, so ContainerMissing cannot fire and no container on this host is being watched. Check `docker logs cadvisor` and that it can still read the Docker socket."
+
+      - alert: ContainerExpectedMissing
+        # Without the expected list, ContainerMissing's join matches nothing
+        # and it is silently unarmed — the same shape as BackupMetricMissing.
+        expr: absent(container_expected)
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "The expected-container list is not being exported"
+          description: "No container_expected metric exists, so ContainerMissing has nothing to compare cAdvisor's output against and cannot fire. Check that /var/lib/node_exporter/textfile_collector/container_expected.prom exists and that node_textfile_scrape_error is 0."
