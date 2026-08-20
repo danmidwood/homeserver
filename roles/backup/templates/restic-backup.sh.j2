@@ -2,6 +2,10 @@
 set -euo pipefail
 
 DUMP_DIR=/mnt/storage/backup/db-dumps
+TEXTFILE_DIR=/var/lib/node_exporter/textfile_collector
+METRICS_FILE="${TEXTFILE_DIR}/restic_backup.prom"
+
+START=$(date +%s)
 
 docker exec planka-postgres pg_dump -U postgres planka > "${DUMP_DIR}/planka.sql"
 docker exec -e PGPASSWORD="{{ immich_db_password }}" immich-postgres pg_dump -U immich immich > "${DUMP_DIR}/immich.sql"
@@ -14,3 +18,22 @@ restic backup \
 {% endfor %}
   --exclude-caches \
   --tag automated
+
+END=$(date +%s)
+
+# Only reached when everything above succeeded, because set -e aborts the
+# script on any failure — so the timestamp genuinely means "last success",
+# which is what BackupStale depends on.
+#
+# Written to a temporary file and renamed, because a rename within the same
+# filesystem is atomic: node_exporter can never scrape a half-written file.
+# The temporary name must not end in .prom or node_exporter would read it.
+cat > "${METRICS_FILE}.tmp" <<METRICS
+# HELP restic_backup_last_success_timestamp_seconds Unix time of the last successful restic backup to B2.
+# TYPE restic_backup_last_success_timestamp_seconds gauge
+restic_backup_last_success_timestamp_seconds ${END}
+# HELP restic_backup_duration_seconds Wall-clock seconds taken by the last successful restic backup.
+# TYPE restic_backup_duration_seconds gauge
+restic_backup_duration_seconds $((END - START))
+METRICS
+mv "${METRICS_FILE}.tmp" "${METRICS_FILE}"
