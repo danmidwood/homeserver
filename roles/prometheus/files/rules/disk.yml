@@ -108,6 +108,23 @@ groups:
           summary: "SMART metrics are missing entirely"
           description: "No smart_collector_success metric is being exported, so every disk-health rule is unarmed. Either the timer is not running or the textfile collector is broken — check `systemctl status smart-metrics.timer` and that /var/lib/node_exporter/textfile_collector/smart.prom exists."
 
+      - alert: SmartMetricsStale
+        # Not redundant with SmartCollectorFailed or SmartMetricsMissing:
+        # those watch a value and an absence, and both are defeated by a
+        # collector that has silently stopped running — the last smart.prom
+        # it wrote keeps being served forever, still saying
+        # smart_collector_success 1, so the value never becomes 0 and the
+        # series never becomes absent. This compares a timestamp against
+        # time() instead of trusting the flag, the same way BackupStale
+        # closes the equivalent blind spot for the backup.
+        expr: time() - smart_collector_last_run_timestamp_seconds > 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SMART collector has not run in over an hour"
+          description: "smart-metrics.sh last ran {{ $value | humanizeDuration }} ago. The timer runs every 15 minutes, so an hour of silence means roughly four consecutive missed runs. While this holds, every SMART rule is evaluating a stale snapshot, so the disks are effectively unmonitored regardless of what the other metrics say. Check `systemctl status smart-metrics.timer`."
+
       - alert: MdArrayFailed
         # Deliberately NOT an alert on a degraded array: md0 intentionally
         # runs as a single disk until a second is added, so a degraded-array

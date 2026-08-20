@@ -248,6 +248,43 @@ tests:
               summary: "SMART metrics are missing entirely"
               description: "No smart_collector_success metric is being exported, so every disk-health rule is unarmed. Either the timer is not running or the textfile collector is broken — check `systemctl status smart-metrics.timer` and that /var/lib/node_exporter/textfile_collector/smart.prom exists."
 
+  # A collector that keeps running writes a timestamp that tracks
+  # promtool's clock, so time() - timestamp stays ~0. Checked well past the
+  # 15m for: window (2h in), not right at the start: if the expression were
+  # broken (e.g. always true, or the subtraction flipped), it would have
+  # fired long before this point, so this genuinely exercises the rule.
+  - interval: 1m
+    input_series:
+      - series: 'smart_collector_last_run_timestamp_seconds'
+        values: '0+60x150'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: SmartMetricsStale
+        exp_alerts: []
+
+  # A collector that has stopped running leaves the timestamp frozen while
+  # promtool's clock keeps advancing, so the gap grows past the 1h
+  # threshold on its own — the same trick BackupStale's tests use.
+  - interval: 1m
+    input_series:
+      - series: 'smart_collector_last_run_timestamp_seconds'
+        values: '0+0x100'
+    alert_rule_test:
+      # 50m elapsed: the gap is 3000s, under the 3600s threshold, silent.
+      - eval_time: 50m
+        alertname: SmartMetricsStale
+        exp_alerts: []
+      # 90m elapsed: the gap is 5400s, over threshold since ~61m and held
+      # for well over the 15m for: window.
+      - eval_time: 90m
+        alertname: SmartMetricsStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "SMART collector has not run in over an hour"
+              description: "smart-metrics.sh last ran 1h 30m 0s ago. The timer runs every 15 minutes, so an hour of silence means roughly four consecutive missed runs. While this holds, every SMART rule is evaluating a stale snapshot, so the disks are effectively unmonitored regardless of what the other metrics say. Check `systemctl status smart-metrics.timer`."
+
   # The array losing its last disk. A merely degraded array is the intended
   # state today and must stay silent.
   - interval: 1m
