@@ -299,16 +299,54 @@ wanted later it belongs on a weekly timer, not on every backup.
 
 ### Container health — cAdvisor
 
+cAdvisor runs as a digest-pinned container with the Docker socket mounted
+read-only, publishing a host port for Prometheus to scrape. It is the only
+sensor in this design with no native package worth using.
+
 | Alert | Condition | Severity |
 |---|---|---|
-| `ContainerMissing` | an expected container not seen for 5m | critical |
+| `ContainerMissing` | a container on the expected list is no longer reported, for 5m | critical |
 | `ContainerRestartLoop` | more than 3 starts in an hour | warning |
-| `ContainerOOMKilled` | any OOM kill event | warning |
+| `ContainerOOMKilled` | an OOM kill event | warning |
+| `ContainerExpectedMissing` | the expected-container list itself is not being exported | warning |
 
-`ContainerMissing` needs a list of what is expected. Ansible already knows
-every container name because it creates them, so the rule file is templated
-from a `monitored_containers` variable. Adding a service to the playbook then
-adds its alert automatically rather than depending on someone remembering.
+**The expected list is data, not rule text.** `ContainerMissing` has to know
+what ought to be running, and the obvious approach — templating the rule file
+from a `monitored_containers` variable — was rejected. A templated rule file
+lives under `templates/`, where the test harness never sees it, because that
+harness globs `roles/prometheus/files/rules/*.yml`. It is also not valid YAML
+until rendered, so `promtool check rules` cannot validate it, and every Go
+template expression in its annotations would need `{% raw %}` to survive
+Jinja. The result would be one untested, unvalidatable rule sitting among
+tested ones.
+
+Instead Ansible writes the expected set into node-exporter's textfile
+directory as a metric:
+
+```
+container_expected{name="vaultwarden"} 1
+```
+
+The rule then stays static, testable and free of Jinja:
+
+```
+container_expected == 1 unless on(name) container_last_seen
+```
+
+Adding a service to the playbook adds a line to the list, which adds a
+metric, which extends coverage automatically — the property the templated
+approach was reaching for, without its costs. The expected-list file is
+itself covered by `TextfileCollectorError`, and `ContainerExpectedMissing`
+catches the case where the list stops being exported entirely, which would
+otherwise leave `ContainerMissing` matching nothing and silently unarmed.
+
+**Rules are written after cAdvisor is deployed, not before.** Elsewhere in
+this design the rules come first, because the collector emitting their
+metrics is written here too. cAdvisor is third-party: it decides its own
+metric names, and whether `container_oom_events_total` exists at all depends
+on the kernel and the cAdvisor version. Writing rules against assumed names
+risks a rule that matches nothing while its unit tests pass, so the first
+task deploys cAdvisor and inventories what it genuinely exports.
 
 ### Reachability and TLS — blackbox exporter
 
