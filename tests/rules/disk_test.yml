@@ -1,0 +1,280 @@
+rule_files:
+  - ../../roles/prometheus/files/rules/disk.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A healthy ATA disk must produce no alerts at all.
+  - interval: 1m
+    input_series:
+      - series: 'smart_device_health_ok{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+        values: '1+0x30'
+      - series: 'smart_ata_pending_sectors{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+        values: '0+0x30'
+      - series: 'smart_ata_reallocated_sectors{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+        values: '0+0x30'
+      - series: 'smart_temperature_celsius{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+        values: '38+0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SmartHealthFailed
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: SmartPendingSectors
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: SmartReallocatedSectors
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: SmartDiskTemperature
+        exp_alerts: []
+
+  # The drive's own health self-assessment failing is the strongest signal
+  # a disk gives that it is dying.
+  - interval: 1m
+    input_series:
+      - series: 'smart_device_health_ok{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+        values: '0+0x30'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: SmartHealthFailed
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: SmartHealthFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              device: /dev/sdb
+              model: ST8000NT001-3LZ101
+            exp_annotations:
+              summary: "/dev/sdb reports SMART health FAILED"
+              description: "ST8000NT001-3LZ101 at /dev/sdb has failed its own health self-assessment. This is the strongest warning a drive gives. Treat the disk as dying: verify the restic backup is current before doing anything else."
+
+  # A single pending sector is critical: it means data could not be read.
+  - interval: 1m
+    input_series:
+      - series: 'smart_ata_pending_sectors{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+        values: '1+0x30'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: SmartPendingSectors
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              device: /dev/sdb
+              model: ST8000NT001-3LZ101
+            exp_annotations:
+              summary: "/dev/sdb has 1 sectors pending reallocation"
+              description: "ST8000NT001-3LZ101 at /dev/sdb could not read 1 sectors. Any file occupying them is already damaged. Check the restic backup covers this disk's contents."
+
+  # Reallocated sectors are a warning: the drive coped, but it is degrading.
+  - interval: 1m
+    input_series:
+      - series: 'smart_ata_reallocated_sectors{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+        values: '4+0x30'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: SmartReallocatedSectors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: /dev/sdb
+              model: ST8000NT001-3LZ101
+            exp_annotations:
+              summary: "/dev/sdb has reallocated 4 sectors"
+              description: "ST8000NT001-3LZ101 at /dev/sdb has remapped 4 bad sectors to spares. Not urgent on its own, but the count never goes down — watch whether it climbs."
+
+  # Offline uncorrectable sectors mean reads have already failed.
+  - interval: 1m
+    input_series:
+      - series: 'smart_ata_offline_uncorrectable{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+        values: '2+0x30'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: SmartOfflineUncorrectable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              device: /dev/sdb
+              model: ST8000NT001-3LZ101
+            exp_annotations:
+              summary: "/dev/sdb has 2 uncorrectable sectors"
+              description: "ST8000NT001-3LZ101 at /dev/sdb hit 2 sectors it could not read even with error correction. Data in them is gone."
+
+  # Temperature: 60C sustained fires, 50C never does.
+  - interval: 1m
+    input_series:
+      - series: 'smart_temperature_celsius{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+        values: '60+0x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SmartDiskTemperature
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: SmartDiskTemperature
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: /dev/sdb
+              model: ST8000NT001-3LZ101
+            exp_annotations:
+              summary: "/dev/sdb running at 60C"
+              description: "ST8000NT001-3LZ101 at /dev/sdb has been above 55C for 15 minutes. Sustained heat shortens drive life; check enclosure airflow."
+  - interval: 1m
+    input_series:
+      - series: 'smart_temperature_celsius{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+        values: '50+0x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: SmartDiskTemperature
+        exp_alerts: []
+
+  # NVMe: healthy disk is silent, then each failure signal fires.
+  - interval: 1m
+    input_series:
+      - series: 'smart_nvme_critical_warning{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+        values: '0+0x30'
+      - series: 'smart_nvme_media_errors{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+        values: '0+0x30'
+      - series: 'smart_nvme_percentage_used{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+        values: '11+0x70'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: NvmeCriticalWarning
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: NvmeMediaErrors
+        exp_alerts: []
+      - eval_time: 65m
+        alertname: NvmeWearHigh
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'smart_nvme_critical_warning{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+        values: '1+0x30'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: NvmeCriticalWarning
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              device: /dev/nvme0n1
+              model: THNSN5512GPUK NVMe TOSHIBA 512GB
+            exp_annotations:
+              summary: "/dev/nvme0n1 raised an NVMe critical warning"
+              description: "THNSN5512GPUK NVMe TOSHIBA 512GB at /dev/nvme0n1 set critical_warning to 1. Run `smartctl -a /dev/nvme0n1` to see which condition: spare exhausted, overheating, degraded reliability, or read-only fallback."
+
+  - interval: 1m
+    input_series:
+      - series: 'smart_nvme_media_errors{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+        values: '3+0x30'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: NvmeMediaErrors
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              device: /dev/nvme0n1
+              model: THNSN5512GPUK NVMe TOSHIBA 512GB
+            exp_annotations:
+              summary: "/dev/nvme0n1 reported 3 media errors"
+              description: "THNSN5512GPUK NVMe TOSHIBA 512GB at /dev/nvme0n1 logged 3 media and data integrity errors — data it could not return correctly."
+
+  - interval: 1m
+    input_series:
+      - series: 'smart_nvme_percentage_used{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+        values: '85+0x70'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: NvmeWearHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              device: /dev/nvme0n1
+              model: THNSN5512GPUK NVMe TOSHIBA 512GB
+            exp_annotations:
+              summary: "/dev/nvme0n1 is 85% through its endurance"
+              description: "THNSN5512GPUK NVMe TOSHIBA 512GB at /dev/nvme0n1 reports 85% of its rated write endurance consumed. Not a failure, but plan a replacement."
+
+  # The collector reporting failure, and the collector having vanished
+  # entirely, are separate rules for the same reason BackupStale and
+  # BackupMetricMissing are: a comparison cannot fire on an absent series.
+  - interval: 1m
+    input_series:
+      - series: 'smart_collector_success'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SmartCollectorFailed
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: SmartCollectorFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "The SMART collector could not read every disk"
+              description: "smart-metrics.sh ran but failed to read at least one configured device, so some disks are unmonitored. Check `journalctl -u smart-metrics.service`."
+  - interval: 1m
+    input_series:
+      - series: 'smart_collector_success'
+        values: '1+0x70'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: SmartCollectorFailed
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: SmartMetricsMissing
+        exp_alerts: []
+      # The metric is present continuously past the 1h `for:` window too:
+      # SmartMetricsMissing must stay silent for as long as the series
+      # exists, not just briefly at 35m.
+      - eval_time: 65m
+        alertname: SmartMetricsMissing
+        exp_alerts: []
+  - interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: SmartMetricsMissing
+        exp_alerts: []
+      - eval_time: 65m
+        alertname: SmartMetricsMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "SMART metrics are missing entirely"
+              description: "No smart_collector_success metric is being exported, so every disk-health rule is unarmed. Either the timer is not running or the textfile collector is broken — check `systemctl status smart-metrics.timer` and that /var/lib/node_exporter/textfile_collector/smart.prom exists."
+
+  # The array losing its last disk. A merely degraded array is the intended
+  # state today and must stay silent.
+  - interval: 1m
+    input_series:
+      - series: 'node_md_disks{device="md0",state="active",instance="xps",job="node"}'
+        values: '1+0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: MdArrayFailed
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'node_md_disks{device="md0",state="active",instance="xps",job="node"}'
+        values: '0+0x30'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MdArrayFailed
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: MdArrayFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              device: md0
+              state: active
+              instance: xps
+              job: node
+            exp_annotations:
+              summary: "RAID array md0 has no active disks"
+              description: "md0 has lost every member disk. The filesystem on it is unreadable. Only paths covered by the restic backup to B2 survive."

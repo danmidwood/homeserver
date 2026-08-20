@@ -1,0 +1,123 @@
+groups:
+  - name: disk
+    rules:
+      # The array behind /mnt/tmdas is deliberately running as a single disk
+      # until a second one is added, so there is no redundancy to absorb a
+      # failure. SMART warning is the only notice that arrives before data
+      # starts failing to read.
+
+      - alert: SmartHealthFailed
+        expr: smart_device_health_ok == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.device }} reports SMART health FAILED"
+          description: "{{ $labels.model }} at {{ $labels.device }} has failed its own health self-assessment. This is the strongest warning a drive gives. Treat the disk as dying: verify the restic backup is current before doing anything else."
+
+      - alert: SmartPendingSectors
+        # Sectors the drive could not read and has not yet remapped. Unlike
+        # reallocated sectors, these represent data that is currently
+        # unreadable, not damage the drive has already worked around.
+        expr: smart_ata_pending_sectors > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.device }} has {{ $value }} sectors pending reallocation"
+          description: "{{ $labels.model }} at {{ $labels.device }} could not read {{ $value }} sectors. Any file occupying them is already damaged. Check the restic backup covers this disk's contents."
+
+      - alert: SmartReallocatedSectors
+        # The drive coped by remapping to spare sectors, so nothing is lost
+        # yet — but the count only ever rises, and a rising count predicts
+        # failure.
+        expr: smart_ata_reallocated_sectors > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.device }} has reallocated {{ $value }} sectors"
+          description: "{{ $labels.model }} at {{ $labels.device }} has remapped {{ $value }} bad sectors to spares. Not urgent on its own, but the count never goes down — watch whether it climbs."
+
+      - alert: SmartOfflineUncorrectable
+        expr: smart_ata_offline_uncorrectable > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.device }} has {{ $value }} uncorrectable sectors"
+          description: "{{ $labels.model }} at {{ $labels.device }} hit {{ $value }} sectors it could not read even with error correction. Data in them is gone."
+
+      - alert: SmartDiskTemperature
+        expr: smart_temperature_celsius > 55
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.device }} running at {{ $value }}C"
+          description: "{{ $labels.model }} at {{ $labels.device }} has been above 55C for 15 minutes. Sustained heat shortens drive life; check enclosure airflow."
+
+      - alert: NvmeCriticalWarning
+        # A bitfield: any non-zero bit means spare exhaustion, a temperature
+        # excursion, degraded reliability, read-only fallback, or failed
+        # volatile-memory backup. One rule covers all of them.
+        expr: smart_nvme_critical_warning > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.device }} raised an NVMe critical warning"
+          description: "{{ $labels.model }} at {{ $labels.device }} set critical_warning to {{ $value }}. Run `smartctl -a {{ $labels.device }}` to see which condition: spare exhausted, overheating, degraded reliability, or read-only fallback."
+
+      - alert: NvmeMediaErrors
+        expr: smart_nvme_media_errors > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.device }} reported {{ $value }} media errors"
+          description: "{{ $labels.model }} at {{ $labels.device }} logged {{ $value }} media and data integrity errors — data it could not return correctly."
+
+      - alert: NvmeWearHigh
+        expr: smart_nvme_percentage_used > 80
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.device }} is {{ $value }}% through its endurance"
+          description: "{{ $labels.model }} at {{ $labels.device }} reports {{ $value }}% of its rated write endurance consumed. Not a failure, but plan a replacement."
+
+      - alert: SmartCollectorFailed
+        expr: smart_collector_success == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The SMART collector could not read every disk"
+          description: "smart-metrics.sh ran but failed to read at least one configured device, so some disks are unmonitored. Check `journalctl -u smart-metrics.service`."
+
+      - alert: SmartMetricsMissing
+        # Not redundant with SmartCollectorFailed: that compares a value, and
+        # an absent series has no value to compare. Without this, a collector
+        # that never runs at all leaves every SMART rule silently unarmed.
+        expr: absent(smart_collector_success)
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "SMART metrics are missing entirely"
+          description: "No smart_collector_success metric is being exported, so every disk-health rule is unarmed. Either the timer is not running or the textfile collector is broken — check `systemctl status smart-metrics.timer` and that /var/lib/node_exporter/textfile_collector/smart.prom exists."
+
+      - alert: MdArrayFailed
+        # Deliberately NOT an alert on a degraded array: md0 intentionally
+        # runs as a single disk until a second is added, so a degraded-array
+        # alert would fire permanently. This fires only when the array has no
+        # working disk left at all. TIGHTEN THIS when the second disk is
+        # added, to compare against node_md_disks_required.
+        expr: node_md_disks{state="active"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RAID array {{ $labels.device }} has no active disks"
+          description: "{{ $labels.device }} has lost every member disk. The filesystem on it is unreadable. Only paths covered by the restic backup to B2 survive."
