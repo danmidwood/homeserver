@@ -1,0 +1,31 @@
+groups:
+  - name: backup
+    rules:
+      # The offsite backup to Backblaze B2 is the reason this whole
+      # monitoring stack exists. These three rules cover the three ways it
+      # can let you down: it failed, it stopped running, or it was never
+      # being watched in the first place.
+
+      - alert: BackupStale
+        # 26 hours, not 24: the timer is OnCalendar=daily, so a run that
+        # starts late or takes a while must not trip this.
+        expr: time() - restic_backup_last_success_timestamp_seconds > 26 * 3600
+        labels:
+          severity: critical
+        annotations:
+          summary: "No successful backup in over 26 hours"
+          description: "The last successful restic backup to B2 finished {{ $value | humanizeDuration }} ago. The daily timer may have failed to run at all — check `systemctl list-timers restic-backup.timer` and `journalctl -u restic-backup.service`."
+
+      - alert: BackupMetricMissing
+        # Not redundant with BackupStale. BackupStale compares a timestamp;
+        # if the textfile was never written there is no timestamp to
+        # compare and that rule silently never fires. absent() catches
+        # exactly that — the case where the backup looks monitored and is
+        # not. The 1h `for:` stops it firing during a Prometheus restart.
+        expr: absent(restic_backup_last_success_timestamp_seconds)
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backup metrics are missing entirely"
+          description: "node_exporter is not exporting restic_backup_last_success_timestamp_seconds, so BackupStale cannot fire and the backup is effectively unmonitored. Either no backup has succeeded since this was deployed, or the textfile collector is broken — check /var/lib/node_exporter/textfile_collector/restic_backup.prom exists and node_textfile_scrape_error is 0."
