@@ -242,9 +242,10 @@ rule on it replaces several.
 | `SmartCollectorFailed` | the collector script itself failed | warning |
 | `SmartMetricsMissing` | no SMART metrics are exported at all | warning |
 | `SmartMetricsStale` | the collector's last-run timestamp is over an hour old | warning |
+| `SmartSeriesMissing` | an attribute family the collector should export is absent | warning |
 | `MdArrayFailed` | `md0` has zero active disks | critical |
 
-The three collector-health rules are not redundant with one another.
+The four collector-health rules are not redundant with one another.
 `SmartCollectorFailed` watches a value — the gauge the collector itself
 writes on every run — so it only speaks once the collector has run and
 recorded a failure. `SmartMetricsMissing` watches for the series being
@@ -254,6 +255,16 @@ that silently stopped running, whose last written file keeps being served
 forever still saying success — no failed value to trip `SmartCollectorFailed`,
 no absent series to trip `SmartMetricsMissing`, only a last-run timestamp
 quietly falling behind that nothing else would notice.
+
+The first three all watch the collector's own success gauge — its value,
+its absence, and its age — and none of them can see the fourth failure
+mode: a device that answers its own health check but yields no attribute
+table. `SmartSeriesMissing` watches whether the metrics the collector is
+supposed to produce actually exist, not what the collector believes about
+itself. Without it, that device leaves the collector reporting success
+with a fresh timestamp while the reallocated, pending and uncorrectable
+series are silently gone — so the three rules that best predict the array
+disk's failure watch nothing.
 
 `MdArrayFailed` needs no new sensor: node-exporter already exports
 `node_md_disks{device="md0",state="active"}`. It deliberately does NOT alert
