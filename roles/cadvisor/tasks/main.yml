@@ -1,0 +1,31 @@
+- name: Pull the cAdvisor image
+  community.docker.docker_image_pull:
+    name: "gcr.io/cadvisor/cadvisor:v0.55.1@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57"
+    pull: not_present
+
+- name: Run cAdvisor container
+  community.docker.docker_container:
+    name: cadvisor
+    image: "gcr.io/cadvisor/cadvisor:v0.55.1@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57"
+    state: started
+    restart_policy: always
+    networks:
+      - name: caddy_network
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      # cAdvisor reads OOM kill events from the kernel log. Without this
+      # container_oom_events_total exists but never increments, so
+      # ContainerOOMKilled would be silently unarmed.
+      - /dev/kmsg:/dev/kmsg:r
+    command:
+      # Only the metrics the rules actually use. The default set is large
+      # and most of it goes unread, which costs scrape time and cardinality.
+      - "--docker_only=true"
+      - "--housekeeping_interval=30s"

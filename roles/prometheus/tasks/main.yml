@@ -62,6 +62,14 @@
     mode: '0644'
   notify: Restart node-exporter
 
+- name: Write the expected-container list for ContainerMissing
+  ansible.builtin.template:
+    src: container_expected.prom.j2
+    dest: /var/lib/node_exporter/textfile_collector/container_expected.prom
+    owner: root
+    group: root
+    mode: '0644'
+
 - name: Start and enable node-exporter
   ansible.builtin.systemd:
     name: prometheus-node-exporter

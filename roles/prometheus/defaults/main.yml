@@ -21,3 +21,30 @@ smart_devices:
     type: sat
   - device: /dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT
     type: nvme
+
+# The containers this host is configured to run. Written into the textfile
+# collector as container_expected{name="..."} so ContainerMissing can compare
+# what should be running against what cAdvisor actually reports.
+#
+# This is data rather than templated rule text deliberately: a templated rule
+# file lives under templates/, where the test harness never looks and promtool
+# cannot validate it. Adding a service to the playbook means adding a line
+# here, which extends alert coverage automatically.
+monitored_containers:
+  - actual_budget
+  - alertmanager
+  - cadvisor
+  - caddy
+  - ftp_server
+  - grafana
+  - immich-machine-learning
+  - immich-postgres
+  - immich-redis
+  - immich-server
+  - kavita
+  - planka
+  - planka-postgres
+  - plex
+  - portainer
+  - prometheus
+  - vaultwarden

@@ -1,0 +1,5 @@
+# HELP container_expected 1 for each container this host is configured to run.
+# TYPE container_expected gauge
+{% for container in monitored_containers %}
+container_expected{name="{{ container }}"} 1
+{% endfor %}
