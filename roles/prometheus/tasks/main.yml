@@ -31,12 +31,17 @@
     path: /var/lib/prometheus
     state: absent
 
-- name: Ensure node-exporter and smartmontools are installed
+- name: Ensure node-exporter, smartmontools and jq are installed
   # smartmontools provides smartctl, which the SMART collector runs.
+  # jq parses its JSON output. Also declared by the backup role, which
+  # genuinely needs it too; pacman makes installing it from both idempotent,
+  # and a role-limited run (or ever dropping the backup role) must not leave
+  # the collector broken behind smart-metrics.sh's `command not found`.
   ansible.builtin.package:
     name:
       - prometheus-node-exporter
       - smartmontools
+      - jq
     state: present
 
 - name: Create the node-exporter textfile collector directory

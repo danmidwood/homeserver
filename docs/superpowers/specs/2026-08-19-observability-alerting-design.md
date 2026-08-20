@@ -239,7 +239,7 @@ rule on it replaces several.
 | `NvmeCriticalWarning` | NVMe `critical_warning` bitfield non-zero | critical |
 | `NvmeMediaErrors` | NVMe media and data integrity errors above zero | critical |
 | `NvmeWearHigh` | NVMe `percentage_used` above 80% | warning |
-| `SmartCollectorFailed` | the collector script itself failed or stopped running | warning |
+| `SmartCollectorFailed` | the collector script itself failed | warning |
 | `SmartMetricsMissing` | no SMART metrics are exported at all | warning |
 | `SmartMetricsStale` | the collector's last-run timestamp is over an hour old | warning |
 | `MdArrayFailed` | `md0` has zero active disks | critical |
@@ -370,8 +370,10 @@ container on `caddy_network`:
   runs a pinned container with its TSDB bind-mounted to
   `/mnt/storage/config/prometheus/data`; keeps `prometheus-node-exporter`
   native and adds its textfile-collector directory plus the
-  `--collector.textfile.directory` flag; installs `smartmontools`, the
-  `smartmon.sh` script and its timer; owns all alert rule files.
+  `--collector.textfile.directory` flag; installs `smartmontools`, and
+  templates `roles/prometheus/templates/smart-metrics.sh.j2` to
+  `/usr/local/bin/smart-metrics.sh` along with its timer; owns all alert rule
+  files.
 - `backup` — `restic-backup.sh` writes success timestamp and duration to the
   textfile directory; `restic-backup.service` gains
   `OnFailure=backup-alert.service`; that new oneshot unit pushes an alert to
@@ -544,6 +546,17 @@ expendable.
 - **The alert sends up to 800 bytes of backup journal output to Telegram.**
   Fine for a private chat; a future change of receiver to a group or shared
   channel would make it a disclosure decision.
+- **The device list is pinned to specific disks by id**, so a replacement
+  drive is not monitored until the list is updated — deliberately failing
+  loudly rather than silently matching whatever occupies a kernel name.
+- **`node_textfile_scrape_error` has no rule**, though it is the direct
+  signal that a `.prom` file is malformed and it guards both the SMART and
+  the backup metrics. A malformed file is currently only inferred an hour
+  later via the absence rules.
+- **One 55°C temperature threshold covers both a spinning disk and an
+  NVMe**, and NVMe composite temperatures routinely run hotter under load,
+  so this may need splitting by metric family before it becomes a chronic
+  warning.
 
 ## Phase 2: inbound Telegram bot
 

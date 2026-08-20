@@ -3,9 +3,21 @@
 # photo library, which answers SMART only when told `-d sat`. Scanning would
 # monitor the wrong disks and report healthy forever.
 #
+# Pinned by /dev/disk/by-id/ rather than kernel names (/dev/sdb,
+# /dev/nvme0n1): kernel names are assigned in enumeration order at boot, and
+# the array enclosure is USB-attached, so an unplug or a reboot can renumber
+# it — /dev/sda is about to be freed by unplugging the Seagate, and the
+# enclosure may well take its place, with something else taking /dev/sdb.
+# smartctl would then succeed against the wrong disk: smart_collector_success
+# stays 1, healthy metrics flow under the old device label, and the array
+# disk that actually matters goes unmonitored with no alert at all. The
+# model+serial by-id form is used rather than wwn-/eui. because it stays
+# readable in a Telegram message and carries the serial number needed for a
+# warranty claim.
+#
 # /dev/sda is omitted deliberately: its USB bridge rejects SMART commands.
 smart_devices:
-  - device: /dev/sdb
+  - device: /dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2
     type: sat
-  - device: /dev/nvme0n1
+  - device: /dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT
     type: nvme

@@ -7,13 +7,15 @@ tests:
   # A healthy ATA disk must produce no alerts at all.
   - interval: 1m
     input_series:
-      - series: 'smart_device_health_ok{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+      - series: 'smart_device_health_ok{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
         values: '1+0x30'
-      - series: 'smart_ata_pending_sectors{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+      - series: 'smart_ata_pending_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
         values: '0+0x30'
-      - series: 'smart_ata_reallocated_sectors{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+      - series: 'smart_ata_reallocated_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
         values: '0+0x30'
-      - series: 'smart_temperature_celsius{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+      - series: 'smart_ata_offline_uncorrectable{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x30'
+      - series: 'smart_temperature_celsius{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
         values: '38+0x30'
     alert_rule_test:
       - eval_time: 20m
@@ -26,6 +28,9 @@ tests:
         alertname: SmartReallocatedSectors
         exp_alerts: []
       - eval_time: 20m
+        alertname: SmartOfflineUncorrectable
+        exp_alerts: []
+      - eval_time: 20m
         alertname: SmartDiskTemperature
         exp_alerts: []
 
@@ -33,7 +38,7 @@ tests:
   # a disk gives that it is dying.
   - interval: 1m
     input_series:
-      - series: 'smart_device_health_ok{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+      - series: 'smart_device_health_ok{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
         values: '0+0x30'
     alert_rule_test:
       - eval_time: 3m
@@ -44,16 +49,16 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: critical
-              device: /dev/sdb
+              device: /dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2
               model: ST8000NT001-3LZ101
             exp_annotations:
-              summary: "/dev/sdb reports SMART health FAILED"
-              description: "ST8000NT001-3LZ101 at /dev/sdb has failed its own health self-assessment. This is the strongest warning a drive gives. Treat the disk as dying: verify the restic backup is current before doing anything else."
+              summary: "/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2 reports SMART health FAILED"
+              description: "ST8000NT001-3LZ101 at /dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2 has failed its own health self-assessment. This is the strongest warning a drive gives. Treat the disk as dying: verify the restic backup is current before doing anything else."
 
   # A single pending sector is critical: it means data could not be read.
   - interval: 1m
     input_series:
-      - series: 'smart_ata_pending_sectors{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+      - series: 'smart_ata_pending_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
         values: '1+0x30'
     alert_rule_test:
       - eval_time: 6m
@@ -61,16 +66,16 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: critical
-              device: /dev/sdb
+              device: /dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2
               model: ST8000NT001-3LZ101
             exp_annotations:
-              summary: "/dev/sdb has 1 sectors pending reallocation"
-              description: "ST8000NT001-3LZ101 at /dev/sdb could not read 1 sectors. Any file occupying them is already damaged. Check the restic backup covers this disk's contents."
+              summary: "/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2 has 1 sectors pending reallocation"
+              description: "ST8000NT001-3LZ101 at /dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2 could not read 1 sectors. Any file occupying them is already damaged. Check the restic backup covers this disk's contents."
 
   # Reallocated sectors are a warning: the drive coped, but it is degrading.
   - interval: 1m
     input_series:
-      - series: 'smart_ata_reallocated_sectors{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+      - series: 'smart_ata_reallocated_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
         values: '4+0x30'
     alert_rule_test:
       - eval_time: 6m
@@ -78,16 +83,16 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: warning
-              device: /dev/sdb
+              device: /dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2
               model: ST8000NT001-3LZ101
             exp_annotations:
-              summary: "/dev/sdb has reallocated 4 sectors"
-              description: "ST8000NT001-3LZ101 at /dev/sdb has remapped 4 bad sectors to spares. Not urgent on its own, but the count never goes down — watch whether it climbs."
+              summary: "/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2 has reallocated 4 sectors"
+              description: "ST8000NT001-3LZ101 at /dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2 has remapped 4 bad sectors to spares. Not urgent on its own, but the count never goes down — watch whether it climbs."
 
   # Offline uncorrectable sectors mean reads have already failed.
   - interval: 1m
     input_series:
-      - series: 'smart_ata_offline_uncorrectable{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+      - series: 'smart_ata_offline_uncorrectable{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
         values: '2+0x30'
     alert_rule_test:
       - eval_time: 6m
@@ -95,16 +100,16 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: critical
-              device: /dev/sdb
+              device: /dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2
               model: ST8000NT001-3LZ101
             exp_annotations:
-              summary: "/dev/sdb has 2 uncorrectable sectors"
-              description: "ST8000NT001-3LZ101 at /dev/sdb hit 2 sectors it could not read even with error correction. Data in them is gone."
+              summary: "/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2 has 2 uncorrectable sectors"
+              description: "ST8000NT001-3LZ101 at /dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2 hit 2 sectors it could not read even with error correction. Data in them is gone."
 
   # Temperature: 60C sustained fires, 50C never does.
   - interval: 1m
     input_series:
-      - series: 'smart_temperature_celsius{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+      - series: 'smart_temperature_celsius{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
         values: '60+0x30'
     alert_rule_test:
       - eval_time: 10m
@@ -115,14 +120,14 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: warning
-              device: /dev/sdb
+              device: /dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2
               model: ST8000NT001-3LZ101
             exp_annotations:
-              summary: "/dev/sdb running at 60C"
-              description: "ST8000NT001-3LZ101 at /dev/sdb has been above 55C for 15 minutes. Sustained heat shortens drive life; check enclosure airflow."
+              summary: "/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2 running at 60C"
+              description: "ST8000NT001-3LZ101 at /dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2 has been above 55C for 15 minutes. Sustained heat shortens drive life; check enclosure airflow."
   - interval: 1m
     input_series:
-      - series: 'smart_temperature_celsius{device="/dev/sdb",model="ST8000NT001-3LZ101"}'
+      - series: 'smart_temperature_celsius{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
         values: '50+0x30'
     alert_rule_test:
       - eval_time: 25m
@@ -132,11 +137,11 @@ tests:
   # NVMe: healthy disk is silent, then each failure signal fires.
   - interval: 1m
     input_series:
-      - series: 'smart_nvme_critical_warning{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+      - series: 'smart_nvme_critical_warning{device="/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
         values: '0+0x30'
-      - series: 'smart_nvme_media_errors{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+      - series: 'smart_nvme_media_errors{device="/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
         values: '0+0x30'
-      - series: 'smart_nvme_percentage_used{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+      - series: 'smart_nvme_percentage_used{device="/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
         values: '11+0x70'
     alert_rule_test:
       - eval_time: 20m
@@ -151,7 +156,7 @@ tests:
 
   - interval: 1m
     input_series:
-      - series: 'smart_nvme_critical_warning{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+      - series: 'smart_nvme_critical_warning{device="/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
         values: '1+0x30'
     alert_rule_test:
       - eval_time: 6m
@@ -159,15 +164,15 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: critical
-              device: /dev/nvme0n1
+              device: /dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT
               model: THNSN5512GPUK NVMe TOSHIBA 512GB
             exp_annotations:
-              summary: "/dev/nvme0n1 raised an NVMe critical warning"
-              description: "THNSN5512GPUK NVMe TOSHIBA 512GB at /dev/nvme0n1 set critical_warning to 1. Run `smartctl -a /dev/nvme0n1` to see which condition: spare exhausted, overheating, degraded reliability, or read-only fallback."
+              summary: "/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT raised an NVMe critical warning"
+              description: "THNSN5512GPUK NVMe TOSHIBA 512GB at /dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT set critical_warning to 1. Run `smartctl -a /dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT` to see which condition: spare exhausted, overheating, degraded reliability, or read-only fallback."
 
   - interval: 1m
     input_series:
-      - series: 'smart_nvme_media_errors{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+      - series: 'smart_nvme_media_errors{device="/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
         values: '3+0x30'
     alert_rule_test:
       - eval_time: 6m
@@ -175,15 +180,15 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: critical
-              device: /dev/nvme0n1
+              device: /dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT
               model: THNSN5512GPUK NVMe TOSHIBA 512GB
             exp_annotations:
-              summary: "/dev/nvme0n1 reported 3 media errors"
-              description: "THNSN5512GPUK NVMe TOSHIBA 512GB at /dev/nvme0n1 logged 3 media and data integrity errors — data it could not return correctly."
+              summary: "/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT reported 3 media errors"
+              description: "THNSN5512GPUK NVMe TOSHIBA 512GB at /dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT logged 3 media and data integrity errors — data it could not return correctly."
 
   - interval: 1m
     input_series:
-      - series: 'smart_nvme_percentage_used{device="/dev/nvme0n1",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+      - series: 'smart_nvme_percentage_used{device="/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
         values: '85+0x70'
     alert_rule_test:
       - eval_time: 65m
@@ -191,11 +196,11 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: warning
-              device: /dev/nvme0n1
+              device: /dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT
               model: THNSN5512GPUK NVMe TOSHIBA 512GB
             exp_annotations:
-              summary: "/dev/nvme0n1 is 85% through its endurance"
-              description: "THNSN5512GPUK NVMe TOSHIBA 512GB at /dev/nvme0n1 reports 85% of its rated write endurance consumed. Not a failure, but plan a replacement."
+              summary: "/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT is 85% through its endurance"
+              description: "THNSN5512GPUK NVMe TOSHIBA 512GB at /dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT reports 85% of its rated write endurance consumed. Not a failure, but plan a replacement."
 
   # The collector reporting failure, and the collector having vanished
   # entirely, are separate rules for the same reason BackupStale and
@@ -284,6 +289,134 @@ tests:
             exp_annotations:
               summary: "SMART collector has not run in over an hour"
               description: "smart-metrics.sh last ran 1h 30m 0s ago. The timer runs every 15 minutes, so an hour of silence means roughly four consecutive missed runs. While this holds, every SMART rule is evaluating a stale snapshot, so the disks are effectively unmonitored regardless of what the other metrics say. Check `systemctl status smart-metrics.timer`."
+
+  # SmartSeriesMissing: a collector that runs, succeeds, and keeps a fresh
+  # timestamp can still fail to export one attribute family (a USB bridge
+  # dropping to health-only mode, a smartmontools schema change, a
+  # replacement drive missing an attribute). All five families present must
+  # stay silent past the 1h for: window.
+  - interval: 1m
+    input_series:
+      - series: 'smart_ata_reallocated_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_ata_pending_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_ata_offline_uncorrectable{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_nvme_critical_warning{device="/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+        values: '0+0x130'
+      - series: 'smart_collector_last_run_timestamp_seconds'
+        values: '0+60x130'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: SmartSeriesMissing
+        exp_alerts: []
+
+  # Each of the five families is tested missing on its own, with the other
+  # four present, so a mutation that drops any single absent(...) clause
+  # from the expression is caught by exactly one of these.
+  - interval: 1m
+    input_series:
+      - series: 'smart_ata_pending_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_ata_offline_uncorrectable{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_nvme_critical_warning{device="/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+        values: '0+0x130'
+      - series: 'smart_collector_last_run_timestamp_seconds'
+        values: '0+60x130'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: SmartSeriesMissing
+        exp_alerts: []
+      - eval_time: 65m
+        alertname: SmartSeriesMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "A SMART metric family has stopped being exported"
+              description: "The SMART collector reports success and keeps writing a fresh timestamp, but one or more attribute families it is supposed to produce (reallocated sectors, pending sectors, offline uncorrectable, or NVMe critical warning) is absent from smart.prom. The rules that read that family are silently unarmed. Check the raw `smartctl --json -d <type> <device>` output against what smart-metrics.sh expects to parse."
+
+  - interval: 1m
+    input_series:
+      - series: 'smart_ata_reallocated_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_ata_offline_uncorrectable{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_nvme_critical_warning{device="/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+        values: '0+0x130'
+      - series: 'smart_collector_last_run_timestamp_seconds'
+        values: '0+60x130'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: SmartSeriesMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "A SMART metric family has stopped being exported"
+              description: "The SMART collector reports success and keeps writing a fresh timestamp, but one or more attribute families it is supposed to produce (reallocated sectors, pending sectors, offline uncorrectable, or NVMe critical warning) is absent from smart.prom. The rules that read that family are silently unarmed. Check the raw `smartctl --json -d <type> <device>` output against what smart-metrics.sh expects to parse."
+
+  - interval: 1m
+    input_series:
+      - series: 'smart_ata_reallocated_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_ata_pending_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_nvme_critical_warning{device="/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+        values: '0+0x130'
+      - series: 'smart_collector_last_run_timestamp_seconds'
+        values: '0+60x130'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: SmartSeriesMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "A SMART metric family has stopped being exported"
+              description: "The SMART collector reports success and keeps writing a fresh timestamp, but one or more attribute families it is supposed to produce (reallocated sectors, pending sectors, offline uncorrectable, or NVMe critical warning) is absent from smart.prom. The rules that read that family are silently unarmed. Check the raw `smartctl --json -d <type> <device>` output against what smart-metrics.sh expects to parse."
+
+  - interval: 1m
+    input_series:
+      - series: 'smart_ata_reallocated_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_ata_pending_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_ata_offline_uncorrectable{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_collector_last_run_timestamp_seconds'
+        values: '0+60x130'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: SmartSeriesMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "A SMART metric family has stopped being exported"
+              description: "The SMART collector reports success and keeps writing a fresh timestamp, but one or more attribute families it is supposed to produce (reallocated sectors, pending sectors, offline uncorrectable, or NVMe critical warning) is absent from smart.prom. The rules that read that family are silently unarmed. Check the raw `smartctl --json -d <type> <device>` output against what smart-metrics.sh expects to parse."
+
+  - interval: 1m
+    input_series:
+      - series: 'smart_ata_reallocated_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_ata_pending_sectors{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_ata_offline_uncorrectable{device="/dev/disk/by-id/ata-ST8000NT001-3LZ101_WRQ2Q8V2",model="ST8000NT001-3LZ101"}'
+        values: '0+0x130'
+      - series: 'smart_nvme_critical_warning{device="/dev/disk/by-id/nvme-THNSN5512GPUK_NVMe_TOSHIBA_512GB_Z68S122GT1AT",model="THNSN5512GPUK NVMe TOSHIBA 512GB"}'
+        values: '0+0x130'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: SmartSeriesMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "A SMART metric family has stopped being exported"
+              description: "The SMART collector reports success and keeps writing a fresh timestamp, but one or more attribute families it is supposed to produce (reallocated sectors, pending sectors, offline uncorrectable, or NVMe critical warning) is absent from smart.prom. The rules that read that family are silently unarmed. Check the raw `smartctl --json -d <type> <device>` output against what smart-metrics.sh expects to parse."
 
   # The array losing its last disk. A merely degraded array is the intended
   # state today and must stay silent.

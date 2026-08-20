@@ -125,6 +125,29 @@ groups:
           summary: "SMART collector has not run in over an hour"
           description: "smart-metrics.sh last ran {{ $value | humanizeDuration }} ago. The timer runs every 15 minutes, so an hour of silence means roughly four consecutive missed runs. While this holds, every SMART rule is evaluating a stale snapshot, so the disks are effectively unmonitored regardless of what the other metrics say. Check `systemctl status smart-metrics.timer`."
 
+      - alert: SmartSeriesMissing
+        # Not redundant with the other three collector-health rules: those
+        # watch the collector's own gauge (a value, an absence, a stale
+        # timestamp), all of which stay healthy even when the collector runs
+        # cleanly but a device answers `has("smart_status")` and nothing
+        # else. Every attribute extraction in smart-metrics.sh ends in
+        # `// empty`, and emit() skips empty values, so a USB bridge that
+        # degrades to health-only mode, a smartmontools JSON schema change
+        # swallowed by `[]?`, or a replacement drive that does not expose
+        # attributes 5/197/198 all produce smart_collector_success 1, a
+        # fresh timestamp, and smart_device_health_ok present — with the
+        # reallocated/pending/offline-uncorrectable or NVMe series silently
+        # absent. This watches whether the metrics the collector is supposed
+        # to produce actually exist, not whether the collector says it
+        # succeeded.
+        expr: absent(smart_ata_reallocated_sectors) or absent(smart_ata_pending_sectors) or absent(smart_ata_offline_uncorrectable) or absent(smart_nvme_critical_warning) or absent(smart_collector_last_run_timestamp_seconds)
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "A SMART metric family has stopped being exported"
+          description: "The SMART collector reports success and keeps writing a fresh timestamp, but one or more attribute families it is supposed to produce (reallocated sectors, pending sectors, offline uncorrectable, or NVMe critical warning) is absent from smart.prom. The rules that read that family are silently unarmed. Check the raw `smartctl --json -d <type> <device>` output against what smart-metrics.sh expects to parse."
+
       - alert: MdArrayFailed
         # Deliberately NOT an alert on a degraded array: md0 intentionally
         # runs as a single disk until a second is added, so a degraded-array
