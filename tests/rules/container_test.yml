@@ -27,6 +27,11 @@ tests:
       - eval_time: 20m
         alertname: ContainerMetricsMissing
         exp_alerts: []
+      # NOT coverage: at 20m, ContainerExpectedMissing's for: 1h has not
+      # elapsed yet, so this passes regardless of whether the rule is
+      # correct — it only documents the pre-for: boundary. The 75m
+      # assertion below is the real proof, evaluated after the metric has
+      # been present past the for: window the whole time.
       - eval_time: 20m
         alertname: ContainerExpectedMissing
         exp_alerts: []
@@ -45,6 +50,11 @@ tests:
       - series: 'container_last_seen{name="plex",instance="xps",job="cadvisor"}'
         values: '1000+60x30'
     alert_rule_test:
+      # NOT coverage: at 3m, ContainerMissing's for: 5m has not elapsed
+      # yet, so this passes regardless of whether the rule is correct — it
+      # only documents the pre-for: boundary. The 8m assertion below is
+      # the real proof, evaluated once the for: window has actually
+      # elapsed.
       - eval_time: 3m
         alertname: ContainerMissing
         exp_alerts: []
@@ -120,6 +130,11 @@ tests:
       - series: 'container_last_seen{name="plex",instance="xps",job="cadvisor"}'
         values: '1000+60x70'
     alert_rule_test:
+      # NOT coverage: at 30m, ContainerExpectedMissing's for: 1h has not
+      # elapsed yet, so this passes regardless of whether the rule is
+      # correct — it only documents the pre-for: boundary. The 65m
+      # assertion below is the real proof, evaluated once the for: window
+      # has actually elapsed.
       - eval_time: 30m
         alertname: ContainerExpectedMissing
         exp_alerts: []

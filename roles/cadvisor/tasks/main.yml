@@ -14,16 +14,63 @@
     ports:
       - "8080:8080"
     volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
+      # Narrowed to what cAdvisor's Docker/containerd factory needs to
+      # enumerate containers and report the four metrics the rules read,
+      # rather than the original grant of the whole host. /:/rootfs and
+      # /dev/disk are genuinely unneeded: they fed only filesystem-partition
+      # discovery, which no rule reads, and /rootfs specifically gave
+      # cAdvisor a read-only view of the entire host filesystem (service
+      # data directories included) for no benefit. /var/run is narrowed to
+      # the two sockets actually used rather than the whole directory,
+      # which would otherwise expose every other daemon's socket too.
+      #
+      # /var/lib/docker looked like the same kind of unneeded grant —
+      # F4's original review said it fed only partition discovery — but
+      # removing it broke container discovery outright: cAdvisor's Docker
+      # factory reads
+      # /var/lib/docker/image/overlay2/layerdb/mounts/<id>/mount-id to
+      # resolve each container's read-write overlay2 layer, and without it
+      # every one of the 17 running containers logged "failed to identify
+      # the read-write layer ID" and cAdvisor reported only the machine
+      # cgroup. This was caught by the series-count verification this
+      # mount reduction requires, not by reasoning about what the metrics
+      # need — reasoning said this mount was unnecessary and was wrong.
+      # It is restored read-only.
+      #
+      # Both sockets below are required too. cAdvisor's Docker container
+      # factory registers itself through containerd, not through the
+      # Docker socket directly, so it also needs
+      # /run/containerd/containerd.sock (/var/run is a symlink to /run on
+      # Arch). Mounting only the Docker socket does not fail loudly:
+      # cAdvisor starts, serves /metrics, and logs "Registration of the
+      # docker container factory failed" once at startup, then silently
+      # reports nothing but the machine cgroup (container_last_seen{id="/"})
+      # forever after — a working-looking endpoint monitoring zero
+      # containers.
+      #
+      # Verify any future change to this list by series count, not by
+      # reasoning about what "should" be needed:
+      #   curl -s :8080/metrics | grep -c '^container_last_seen'   # expect 18
+      # (unlike the OOM capability below, where a count cannot tell a
+      # working collector from a permanently-zero one — that one needs a
+      # log check instead).
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
       - /var/lib/docker/:/var/lib/docker:ro
-      - /dev/disk/:/dev/disk:ro
+      - /sys:/sys:ro
     devices:
-      # cAdvisor reads OOM kill events from the kernel log. Without this
-      # container_oom_events_total exists but never increments, so
-      # ContainerOOMKilled would be silently unarmed.
+      # cAdvisor reads OOM kill events from /dev/kmsg. Mounting the device
+      # is necessary but NOT sufficient: this host has
+      # kernel.dmesg_restrict=1, so opening /dev/kmsg also requires
+      # CAP_SYSLOG, which is outside Docker's default capability set. The
+      # container_oom_events_total series exists either way — cAdvisor
+      # registers the collector regardless of whether its source works —
+      # so a series count alone cannot tell a working OOM watch from a
+      # permanently-zero one. Confirm with `docker logs cadvisor`: the
+      # "disabling OOM events" warning must be absent.
       - /dev/kmsg:/dev/kmsg:r
+    capabilities:
+      - SYSLOG
     command:
       # Only the metrics the rules actually use. The default set is large
       # and most of it goes unread, which costs scrape time and cardinality.

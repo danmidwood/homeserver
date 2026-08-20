@@ -191,7 +191,7 @@ and does not affect any other part of this design.
 | `VarSpaceCritical` | under 15% free on `/var` for 1h | critical |
 | `DiskWillFillSoon` | `predict_linear(node_filesystem_avail_bytes[6h], 4*24*3600) < 0` | warning |
 | `MemoryPressure` | under 10% `MemAvailable` for 15m | warning |
-| `CPUThermalThrottle` | over 85°C for 10m on any sensor under `chip="platform_coretemp_0"` — package and per-core alike, since the server is a laptop | warning |
+| `CPUThermalThrottle` | over 85°C for 10m on `chip="platform_coretemp_0"`, `sensor="temp1"` (the package sensor) — the server is a laptop | warning |
 | `HostRebooted` | uptime under 5m — a server that reboots by itself is news | info |
 | `ClockNotSynchronised` | the kernel reports the clock is not disciplined by NTP, for 30m | warning |
 | `TextfileCollectorError` | node-exporter cannot parse a textfile metric file, for 15m | warning |
@@ -299,17 +299,67 @@ wanted later it belongs on a weekly timer, not on every backup.
 
 ### Container health — cAdvisor
 
-cAdvisor runs as a digest-pinned container with the Docker socket mounted
-read-only, publishing a host port for Prometheus to scrape. It is the only
-sensor in this design with no native package worth using.
+cAdvisor runs as a digest-pinned container with `/var/run/docker.sock`
+bind-mounted `:ro`, scraped by Prometheus over `caddy_network` at
+`cadvisor:8080`. The container also publishes 8080 on the host, but nothing
+in this repo scrapes that; it is unused. The `:ro` on the socket mount is
+worth no confidence: it constrains the bind mount, not the socket
+underneath, and cAdvisor runs as uid 0, so it has full read/write access to
+the Docker API regardless — equivalent to host root. It is the only sensor
+in this design with no native package worth using.
+
+The Docker socket alone is not enough for cAdvisor to see any containers.
+Two more things are required, both discovered by redeploying and checking
+the series count rather than by reasoning about what "should" be needed —
+reasoning got both of these wrong the first time:
+
+- **`/run/containerd/containerd.sock`.** cAdvisor's Docker container
+  factory registers itself through containerd (`/var/run` is a symlink to
+  `/run` on Arch). Without it, cAdvisor starts, serves `/metrics`, and logs
+  a factory-registration failure once at startup, then silently reports
+  nothing but the machine cgroup (`container_last_seen{id="/"}`) forever
+  after.
+- **`/var/lib/docker`, read-only.** cAdvisor's Docker factory reads
+  `/var/lib/docker/image/overlay2/layerdb/mounts/<id>/mount-id` to resolve
+  each container's read-write overlay2 layer. Without it, every running
+  container logs "failed to identify the read-write layer ID" and is
+  dropped — again leaving only the machine cgroup reported. This one was
+  believed unnecessary (the working theory was that it fed only
+  filesystem-partition discovery, which no rule reads) and removed in an
+  earlier pass of this same increment; it broke container discovery
+  outright and had to be restored.
+
+Both failures look identical at a glance — a healthy-looking endpoint
+serving one series instead of eighteen — and neither is visible from
+cAdvisor's exit status or HTTP status code. This is why any change to this
+mount list has to be verified by series count against a live redeploy,
+never by reasoning alone:
+
+```
+curl -s http://cadvisor:8080/metrics | grep -c '^container_last_seen'   # expect 18
+```
 
 | Alert | Condition | Severity |
 |---|---|---|
 | `ContainerMissing` | a container on the expected list is no longer reported, for 5m | critical |
 | `ContainerRestartLoop` | more than 3 starts in an hour | warning |
 | `ContainerOOMKilled` | an OOM kill event | warning |
-| `ContainerMetricsMissing` | cAdvisor is up but reporting no containers | warning |
+| `ContainerMetricsMissing` | `absent(container_last_seen{name!=""})` — cAdvisor is reporting no containers, whether because it lost the Docker socket or because it is gone entirely (a test asserts the latter case, and it has been observed live) | warning |
 | `ContainerExpectedMissing` | the expected-container list itself is not being exported | warning |
+
+cAdvisor is granted what its Docker/containerd factory needs to enumerate
+containers and report the four metrics the rules read: `/sys` for cgroup
+data, the Docker and containerd sockets, `/var/lib/docker` for overlay2
+layer resolution (above), and `/dev/kmsg` plus `CAP_SYSLOG` for OOM events
+(below). It does not get `/:/rootfs` or `/dev/disk`: neither is read by
+cAdvisor's container factories, both fed only filesystem-partition
+discovery, which no rule reads and which fails noisily on this host's
+btrfs layout regardless, and `/rootfs` specifically handed a read-only view
+of the whole host filesystem — every service's data directory included —
+to a container that already has root-equivalent Docker API access.
+`/var/run` is narrowed to the two sockets cAdvisor actually uses rather
+than mounting the whole directory, which would otherwise expose every
+other daemon's socket on the host too.
 
 **The expected list is data, not rule text.** `ContainerMissing` has to know
 what ought to be running, and the obvious approach — templating the rule file
@@ -348,9 +398,15 @@ metric names, and whether `container_oom_events_total` exists at all depends
 on the kernel and the cAdvisor version. Writing rules against assumed names
 risks a rule that matches nothing while its unit tests pass, so the first
 task deploys cAdvisor and inventories what it genuinely exports. That
-inventory found `container_oom_events_total` present and non-zero under the
-unprivileged configuration with `/dev/kmsg` mounted, so declining
-`privileged: true` cost nothing.
+inventory found `container_oom_events_total` present but registered
+regardless of whether its source actually works — mounting `/dev/kmsg` gets
+the series to exist, not to increment. This host also sets
+`kernel.dmesg_restrict=1`, which requires `CAP_SYSLOG` to open `/dev/kmsg`
+at all; without it cAdvisor logs "disabling OOM events" at startup and the
+series stays at zero forever, series count alone cannot distinguish that
+from a working collector. The container is granted `capabilities: [SYSLOG]`
+for this reason — a narrower grant than `privileged: true`, which was
+rejected both here and for the mount reductions above.
 
 ### Reachability and TLS — blackbox exporter
 
@@ -602,6 +658,30 @@ expendable.
   NVMe**, and NVMe composite temperatures routinely run hotter under load,
   so this may need splitting by metric family before it becomes a chronic
   warning.
+- **Nothing detects a container that is running but absent from
+  `monitored_containers`.** The join is one-way: `ContainerMissing` only
+  ever compares the expected list against what cAdvisor reports, never the
+  other direction. A service added to the playbook and forgotten in the
+  list is unmonitored forever, with every indicator green. The reverse —
+  a container removed from the list but still running — is self-announcing
+  and needs no rule.
+- **On a fresh-host rebuild the expected-container list would exist before
+  most of the containers do.** The `prometheus` role that writes
+  `container_expected` runs at position 14 of 23 in the playbook, while
+  twelve of the seventeen containers are created by roles that run after
+  it. `ContainerMissing` would fire critical for up to twelve containers
+  before they exist. Moving that task to `post_tasks` would fix it.
+- **A slow crash-loop is invisible.** `ContainerRestartLoop` needs four
+  restarts within an hour; a container dying every twenty minutes never
+  reaches that rate, and each individual absence is too brief to reach
+  `ContainerMissing`'s 5-minute `for:` either.
+- **Docker `HEALTHCHECK` state is invisible.** A container that is
+  running, reported by cAdvisor, and permanently unhealthy looks perfect
+  to all five container rules — none of them read health-check status.
+- **Every join in `container.yml` is `on(name)` with no `instance`.**
+  Adding a second host to this Prometheus would let one host's container
+  satisfy another host's expected entry, silently defeating
+  `ContainerMissing` for both.
 
 ## Phase 2: inbound Telegram bot
 

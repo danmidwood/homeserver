@@ -70,7 +70,14 @@ groups:
           description: "{{ $labels.instance }} has {{ $value | humanizePercentage }} of memory available."
 
       - alert: CPUThermalThrottle
-        expr: node_hwmon_temp_celsius{chip="platform_coretemp_0"} > 85
+        # platform_coretemp_0 exposes three sensors on this chip: temp1
+        # (the package) and temp2/temp3 (the two cores), all reading within
+        # a degree or two of each other. Without the sensor filter, one
+        # thermal event fires three near-identical alerts. temp1 is what
+        # governs throttling — it is the package reading, derived from the
+        # cores — so the per-core sensors add nothing actionable on a
+        # two-core CPU and are excluded.
+        expr: node_hwmon_temp_celsius{chip="platform_coretemp_0",sensor="temp1"} > 85
         for: 10m
         labels:
           severity: warning

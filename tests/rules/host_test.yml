@@ -238,6 +238,21 @@ tests:
         alertname: CPUThermalThrottle
         exp_alerts: []
 
+  # A hot per-core sensor (temp2 = Core 0) on the same chip must never fire
+  # CPUThermalThrottle on its own. This is the case the sensor="temp1"
+  # filter exists for: platform_coretemp_0 exposes temp1 (package), temp2
+  # and temp3 (the two cores) all reading within a degree or two of each
+  # other, so without the filter this same series would have produced a
+  # second, redundant alert alongside temp1's.
+  - interval: 1m
+    input_series:
+      - series: 'node_hwmon_temp_celsius{instance="xps",job="node",chip="platform_coretemp_0",sensor="temp2"}'
+        values: '90+0x20'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: CPUThermalThrottle
+        exp_alerts: []
+
   # A disk draining at a steady rate, sitting around 26-28% free (well clear
   # of DiskSpaceLow's 15% and DiskSpaceCritical's 5%), still projects to run
   # dry within 4 days on its current trend. DiskWillFillSoon must fire even
