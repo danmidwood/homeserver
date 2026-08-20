@@ -8,9 +8,12 @@
       - backup_restic_password | default('') | length > 0
     fail_msg: "backup_b2_bucket, backup_b2_endpoint, backup_b2_key_id, backup_b2_application_key and backup_restic_password must all be set in user_passwords.yml"
 
-- name: Install restic
+- name: Install restic and jq
+  # jq builds the Alertmanager JSON payload in backup-alert.sh.
   pacman:
-    name: restic
+    name:
+      - restic
+      - jq
     state: present
 
 - name: Create restic credentials directory
@@ -44,6 +47,23 @@
     owner: root
     group: root
     mode: '0755'
+
+- name: Install the backup failure alert script
+  copy:
+    src: backup-alert.sh
+    dest: /usr/local/bin/backup-alert.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the backup failure alert unit
+  copy:
+    src: backup-alert.service
+    dest: /etc/systemd/system/backup-alert.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd
 
 - name: Install restic systemd service
   copy:

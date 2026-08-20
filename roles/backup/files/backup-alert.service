@@ -1,0 +1,6 @@
+[Unit]
+Description=Push a restic backup failure alert to Alertmanager
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/backup-alert.sh

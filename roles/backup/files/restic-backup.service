@@ -2,6 +2,7 @@
 Description=Restic backup to Backblaze B2
 Wants=network-online.target
 After=network-online.target docker.service
+OnFailure=backup-alert.service
 
 [Service]
 Type=oneshot
