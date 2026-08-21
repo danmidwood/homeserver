@@ -1,0 +1,115 @@
+- name: Ensure the Telegram credentials are configured
+  ansible.builtin.assert:
+    that:
+      - telegram_bot_token | default('') | length > 0
+      - telegram_chat_id | default('') | length > 0
+    fail_msg: "telegram_bot_token and telegram_chat_id must be set in user_passwords.yml"
+
+- name: Ensure the Go toolchain is installed
+  # The bot is built from source on the host, so the repository stays the
+  # single source of truth and no binary is committed.
+  ansible.builtin.package:
+    name: go
+    state: present
+
+- name: Create the telegrambot system user
+  # No shell and no home. Deliberately NOT in the docker group: socket access
+  # is equivalent to root, and this service takes instructions from the
+  # internet.
+  ansible.builtin.user:
+    name: telegrambot
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    home: /var/lib/telegram-bot
+
+- name: Create the bot state directory
+  ansible.builtin.file:
+    path: /var/lib/telegram-bot
+    state: directory
+    owner: telegrambot
+    group: telegrambot
+    mode: '0700'
+
+- name: Create the inbox directory
+  ansible.builtin.file:
+    path: "{{ telegrambot_inbox_dir }}"
+    state: directory
+    owner: telegrambot
+    group: telegrambot
+    mode: '0750'
+
+- name: Create the configuration directory
+  ansible.builtin.file:
+    path: /etc/telegram-bot
+    state: directory
+    owner: root
+    group: telegrambot
+    mode: '0750'
+
+- name: Write the bot environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: /etc/telegram-bot/env
+    owner: root
+    group: telegrambot
+    mode: '0640'
+  # The rendered file contains the bot token. Without this it appears in
+  # --diff and -v output.
+  no_log: true
+  notify: Restart telegram bot
+
+- name: Install the sudoers rules
+  ansible.builtin.template:
+    src: sudoers.j2
+    dest: /etc/sudoers.d/telegram-bot
+    owner: root
+    group: root
+    mode: '0440'
+    # Without validate, a malformed file here breaks sudo for every user on
+    # the host, including the one needed to fix it.
+    validate: 'visudo -cf %s'
+
+- name: Copy the bot source
+  ansible.builtin.copy:
+    src: src/
+    dest: /usr/local/src/telegram-bot/
+    owner: root
+    group: root
+    mode: '0644'
+  register: telegrambot_source
+
+- name: Check whether the binary is already built
+  ansible.builtin.stat:
+    path: /usr/local/bin/telegram-bot
+  register: telegrambot_binary
+
+- name: Build the bot
+  ansible.builtin.command:
+    cmd: go build -trimpath -o /usr/local/bin/telegram-bot .
+    chdir: /usr/local/src/telegram-bot
+  environment:
+    HOME: /root
+    # The project is stdlib-only, so the build needs no network. Setting this
+    # turns an accidentally added dependency into a build failure rather than
+    # a silent download.
+    GOPROXY: "off"
+  when: telegrambot_source.changed or not telegrambot_binary.stat.exists
+  changed_when: true
+  notify: Restart telegram bot
+
+- name: Install the systemd unit
+  ansible.builtin.copy:
+    src: telegram-bot.service
+    dest: /etc/systemd/system/telegram-bot.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart telegram bot
+
+- name: Enable and start the bot
+  ansible.builtin.systemd:
+    name: telegram-bot
+    enabled: true
+    state: started
+    daemon_reload: true

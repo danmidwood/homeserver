@@ -1,0 +1,11 @@
+# Managed by Ansible. Do not edit on the host.
+#
+# The complete privileged capability of the telegram bot. Every line is an
+# exact command with no wildcards, so sudo itself is the allowlist: a bug in
+# the bot cannot widen what it is able to do.
+#
+# Adding a wildcard here would defeat the entire privilege model.
+telegrambot ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block restic-backup.service
+{% for name in telegrambot_restartable %}
+telegrambot ALL=(root) NOPASSWD: /usr/bin/docker restart {{ name }}
+{% endfor %}

@@ -1,0 +1,25 @@
+[Unit]
+Description=Inbound Telegram bot
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+User=telegrambot
+Group=telegrambot
+EnvironmentFile=/etc/telegram-bot/env
+ExecStart=/usr/local/bin/telegram-bot
+Restart=always
+RestartSec=5s
+
+# NoNewPrivileges is deliberately NOT set. It blocks setuid binaries, which
+# includes sudo, so setting it would break /backup_now and /restart with a
+# failure that reads like a permissions bug rather than a unit misconfiguration.
+
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/mnt/storage/telegram-inbox /var/lib/telegram-bot
+
+[Install]
+WantedBy=multi-user.target

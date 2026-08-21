@@ -1,0 +1,27 @@
+# Containers the bot may restart. Application services only.
+#
+# Infrastructure is deliberately absent and must stay absent:
+#   caddy                        fronts all seven sites; restarting it takes
+#                                every one down at once
+#   prometheus, alertmanager     restarting these blinds the monitoring, and
+#                                alertmanager is what delivers the alert saying
+#                                something is wrong. The bot must not be able to
+#                                sever its own reporting path.
+#   cadvisor, blackbox, grafana  monitoring, same argument
+#   *-postgres, immich-redis     data stores; bouncing these under load is a
+#                                different risk class from bouncing an app
+#
+# This list generates the sudoers file, so adding a name here grants real
+# privilege. Restart anything not listed here over SSH.
+telegrambot_restartable:
+  - actual_budget
+  - ftp_server
+  - immich-machine-learning
+  - immich-server
+  - kavita
+  - planka
+  - plex
+  - portainer
+  - vaultwarden
+
+telegrambot_inbox_dir: /mnt/storage/telegram-inbox

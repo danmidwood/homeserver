@@ -16,6 +16,7 @@
     - cadvisor
     - blackbox
     - imagewatch
+    - telegrambot
     - plex
     - alertmanager
     - prometheus

@@ -1,0 +1,5 @@
+- name: Restart telegram bot
+  ansible.builtin.systemd:
+    name: telegram-bot
+    state: restarted
+    daemon_reload: true
