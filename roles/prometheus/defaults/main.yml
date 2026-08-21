@@ -6,8 +6,8 @@
 # Pinned by /dev/disk/by-id/ rather than kernel names (/dev/sdb,
 # /dev/nvme0n1): kernel names are assigned in enumeration order at boot, and
 # the array enclosure is USB-attached, so an unplug or a reboot can renumber
-# it — /dev/sda is about to be freed by unplugging the Seagate, and the
-# enclosure may well take its place, with something else taking /dev/sdb.
+# it — a freed kernel name can be taken over by the enclosure, with
+# something else taking /dev/sdb.
 # smartctl would then succeed against the wrong disk: smart_collector_success
 # stays 1, healthy metrics flow under the old device label, and the array
 # disk that actually matters goes unmonitored with no alert at all. The
