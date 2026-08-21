@@ -16,6 +16,25 @@
   community.docker.docker_container:
     name: "planka-postgres"
     image: "postgres:16-alpine@sha256:d898b0b78a2627cb4ee63464a14efc9d296884f1b28c841b0ab7d7c42f1fffdf"
+    labels:
+      # Watched by Diun. watch_repo lists the repository's tags and reports
+      # newer ones -- necessary because the digest pin above freezes the
+      # digest, so watching this exact reference would report nothing.
+      # No include_tags or exclude_tags: a tag pattern that fails to match a
+      # repository's convention produces no error and no signal, so a missed
+      # release would never announce itself. Filtering follows once there is
+      # real traffic to write it from.
+      diun.enable: "true"
+      diun.watch_repo: "true"
+      # Excluded rather than included, deliberately. An exclude pattern that
+      # is wrong produces visible noise; an include pattern that is wrong
+      # produces silence, and a release that never arrives never announces
+      # itself. These three shapes are provably not releases: per-commit
+      # builds (actualbudget publishes 2883 tags, of which 99.9% are these),
+      # bare commit hashes, and rolling branch builds. Real version tags of
+      # every convention in use here are left untouched, including
+      # v0.9.0.2-ls120, 16-alpine and 1.43.3.10896-cb3ebc72d.
+      diun.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
     state: started
     restart_policy: always
     volumes:
@@ -30,6 +49,25 @@
   community.docker.docker_container:
     name: "planka"
     image: "ghcr.io/plankanban/planka:1.26.3@sha256:e469d724985db3f560ef0aa2218d54536212459bf8ecbdbc9fd995fc3cbe29db"
+    labels:
+      # Watched by Diun. watch_repo lists the repository's tags and reports
+      # newer ones -- necessary because the digest pin above freezes the
+      # digest, so watching this exact reference would report nothing.
+      # No include_tags or exclude_tags: a tag pattern that fails to match a
+      # repository's convention produces no error and no signal, so a missed
+      # release would never announce itself. Filtering follows once there is
+      # real traffic to write it from.
+      diun.enable: "true"
+      diun.watch_repo: "true"
+      # Excluded rather than included, deliberately. An exclude pattern that
+      # is wrong produces visible noise; an include pattern that is wrong
+      # produces silence, and a release that never arrives never announces
+      # itself. These three shapes are provably not releases: per-commit
+      # builds (actualbudget publishes 2883 tags, of which 99.9% are these),
+      # bare commit hashes, and rolling branch builds. Real version tags of
+      # every convention in use here are left untouched, including
+      # v0.9.0.2-ls120, 16-alpine and 1.43.3.10896-cb3ebc72d.
+      diun.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
     state: started
     restart_policy: always
     volumes:

@@ -22,6 +22,13 @@
   community.docker.docker_container:
     name: ftp_server
     image: "fauria/vsftpd:latest@sha256:6d71d7c7f1b0ab2844ec7dc7999a30aef6d758b6d8179cf5967513f87c79c177"
+    labels:
+      # Watched for DIGEST changes, not by repository: this repository
+      # publishes only the `latest` tag, so there is no version tag to watch
+      # and repo watching would report noise while missing the one thing that
+      # can change. In practice this is unlikely ever to fire -- the image was
+      # last pushed in January 2023.
+      diun.enable: "true"
     ports:
       - "21:21"
     volumes:

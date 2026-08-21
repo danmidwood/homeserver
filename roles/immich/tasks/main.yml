@@ -11,6 +11,25 @@
   community.docker.docker_container:
     name: "immich-postgres"
     image: "ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:41eacbe83eca995561fe43814fd4891e16e39632806253848efaf04d3c8a8b84"
+    labels:
+      # Watched by Diun. watch_repo lists the repository's tags and reports
+      # newer ones -- necessary because the digest pin above freezes the
+      # digest, so watching this exact reference would report nothing.
+      # No include_tags or exclude_tags: a tag pattern that fails to match a
+      # repository's convention produces no error and no signal, so a missed
+      # release would never announce itself. Filtering follows once there is
+      # real traffic to write it from.
+      diun.enable: "true"
+      diun.watch_repo: "true"
+      # Excluded rather than included, deliberately. An exclude pattern that
+      # is wrong produces visible noise; an include pattern that is wrong
+      # produces silence, and a release that never arrives never announces
+      # itself. These three shapes are provably not releases: per-commit
+      # builds (actualbudget publishes 2883 tags, of which 99.9% are these),
+      # bare commit hashes, and rolling branch builds. Real version tags of
+      # every convention in use here are left untouched, including
+      # v0.9.0.2-ls120, 16-alpine and 1.43.3.10896-cb3ebc72d.
+      diun.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
     state: started
     restart_policy: always
     volumes:
@@ -34,6 +53,25 @@
   community.docker.docker_container:
     name: "immich-redis"
     image: "docker.io/redis:6.2-alpine@sha256:eaba718fecd1196d88533de7ba49bf903ad33664a92debb24660a922ecd9cac8"
+    labels:
+      # Watched by Diun. watch_repo lists the repository's tags and reports
+      # newer ones -- necessary because the digest pin above freezes the
+      # digest, so watching this exact reference would report nothing.
+      # No include_tags or exclude_tags: a tag pattern that fails to match a
+      # repository's convention produces no error and no signal, so a missed
+      # release would never announce itself. Filtering follows once there is
+      # real traffic to write it from.
+      diun.enable: "true"
+      diun.watch_repo: "true"
+      # Excluded rather than included, deliberately. An exclude pattern that
+      # is wrong produces visible noise; an include pattern that is wrong
+      # produces silence, and a release that never arrives never announces
+      # itself. These three shapes are provably not releases: per-commit
+      # builds (actualbudget publishes 2883 tags, of which 99.9% are these),
+      # bare commit hashes, and rolling branch builds. Real version tags of
+      # every convention in use here are left untouched, including
+      # v0.9.0.2-ls120, 16-alpine and 1.43.3.10896-cb3ebc72d.
+      diun.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
     state: started
     restart_policy: always
     networks:
@@ -48,6 +86,25 @@
   community.docker.docker_container:
     name: "immich-server"
     image: "ghcr.io/immich-app/immich-server:v3.1.0@sha256:b434cb9287eea1471c9974845914d4dd328c9c2d652e446ed4930f99944f0ceb"
+    labels:
+      # Watched by Diun. watch_repo lists the repository's tags and reports
+      # newer ones -- necessary because the digest pin above freezes the
+      # digest, so watching this exact reference would report nothing.
+      # No include_tags or exclude_tags: a tag pattern that fails to match a
+      # repository's convention produces no error and no signal, so a missed
+      # release would never announce itself. Filtering follows once there is
+      # real traffic to write it from.
+      diun.enable: "true"
+      diun.watch_repo: "true"
+      # Excluded rather than included, deliberately. An exclude pattern that
+      # is wrong produces visible noise; an include pattern that is wrong
+      # produces silence, and a release that never arrives never announces
+      # itself. These three shapes are provably not releases: per-commit
+      # builds (actualbudget publishes 2883 tags, of which 99.9% are these),
+      # bare commit hashes, and rolling branch builds. Real version tags of
+      # every convention in use here are left untouched, including
+      # v0.9.0.2-ls120, 16-alpine and 1.43.3.10896-cb3ebc72d.
+      diun.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
     state: started
     restart_policy: always
     volumes:
@@ -74,6 +131,25 @@
   community.docker.docker_container:
     name: "immich-machine-learning"
     image: "ghcr.io/immich-app/immich-machine-learning:v3.1.0@sha256:5a0839dc5303cd7215bcd2180a26aed3af41675aefb3e75e5157e9f10ad16e6e"
+    labels:
+      # Watched by Diun. watch_repo lists the repository's tags and reports
+      # newer ones -- necessary because the digest pin above freezes the
+      # digest, so watching this exact reference would report nothing.
+      # No include_tags or exclude_tags: a tag pattern that fails to match a
+      # repository's convention produces no error and no signal, so a missed
+      # release would never announce itself. Filtering follows once there is
+      # real traffic to write it from.
+      diun.enable: "true"
+      diun.watch_repo: "true"
+      # Excluded rather than included, deliberately. An exclude pattern that
+      # is wrong produces visible noise; an include pattern that is wrong
+      # produces silence, and a release that never arrives never announces
+      # itself. These three shapes are provably not releases: per-commit
+      # builds (actualbudget publishes 2883 tags, of which 99.9% are these),
+      # bare commit hashes, and rolling branch builds. Real version tags of
+      # every convention in use here are left untouched, including
+      # v0.9.0.2-ls120, 16-alpine and 1.43.3.10896-cb3ebc72d.
+      diun.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
     state: started
     restart_policy: always
     volumes:
