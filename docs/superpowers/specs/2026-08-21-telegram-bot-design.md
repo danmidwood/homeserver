@@ -191,11 +191,27 @@ them again — a crash loop could restart containers repeatedly or fire backups.
 The offset is therefore persisted to a state file and advanced only after a
 command has been handled.
 
-**The bot dying silently.** It writes a heartbeat to the node-exporter textfile
-collector on each successful poll, and a `TelegramBotDown` rule alerts when that
-goes stale. This works precisely because Alertmanager sends to Telegram
-independently of the bot: the broken component is not the one doing the
-reporting.
+**The bot dying silently.** node-exporter's systemd collector is enabled with a
+narrow `unit-include`, and `SystemdUnitFailed` alerts when `telegram-bot.service`
+has not been active for fifteen minutes. This works because Alertmanager sends
+to Telegram independently of the bot: the broken component is not the one doing
+the reporting.
+
+Two alternatives were rejected. A heartbeat written to the node-exporter
+textfile collector would need the bot to have write access to a directory that
+also holds `restic_backup.prom` and `smart.prom`, letting a compromised bot
+forge the backup and disk-health metrics — hiding exactly the failures the
+alerting exists to catch. Having the bot serve `/metrics` for Prometheus to
+scrape would need a listening socket on all interfaces, since Prometheus is
+containerised and reaches the host over the docker bridge rather than loopback,
+and it would make liveness depend on the service answering for itself: a wedged
+bot still accepting connections would pass a scrape while being useless.
+
+Reading systemd's own view of the unit needs no port, no metrics code in the
+bot, and no cooperation from the thing being monitored. The same collector also
+covers `restic-backup.service`, `backup-alert.service`,
+`image-update-check.service` and `docker.service`, and a second rule,
+`SystemdUnitInFailedState`, alerts on any of them entering the failed state.
 
 **Telegram unreachable.** Exponential backoff, not a crash loop. `Restart=always`
 on the unit covers a genuine crash.
@@ -225,7 +241,9 @@ parsing.
 - `roles/telegrambot` — the `telegrambot` system user, the Go source, an Ansible
   build step, the systemd unit, the generated sudoers file, and the inbox
   directory
-- `roles/prometheus` — a `TelegramBotDown` rule and its unit test
+- `roles/prometheus` — the systemd collector enabled on node-exporter, plus
+  `systemd.yml` with `SystemdUnitFailed` and `SystemdUnitInFailedState` and
+  their unit tests. The bot itself exposes no network listener.
 - `roles/backup` — `/mnt/storage/telegram-inbox` added to `backup_paths`
 - nothing new in `user_passwords.yml` — phase 1 already stores
   `telegram_bot_token` and `telegram_chat_id`, and for a private chat the chat

@@ -749,9 +749,13 @@ expendable.
 - **`/var` under 5% free double-fires.** It satisfies both `DiskSpaceCritical`
   (which does not exclude `/var`) and `VarSpaceCritical`, so one condition
   sends two Telegram messages.
-- **`backup-alert.service` has no `OnFailure=` of its own**, so if the
-  handler itself dies nothing notifies. A general fix needs node-exporter's
-  `systemd` collector, which is not enabled.
+- **`backup-alert.service` has no `OnFailure=` of its own**, so if the handler
+  itself dies its own failure raises nothing directly. This is now covered
+  indirectly: node-exporter's `systemd` collector is enabled with a narrow
+  `unit-include`, and `SystemdUnitInFailedState` alerts on any watched unit
+  sitting in the failed state, `backup-alert.service` among them. The gap that
+  remains is timing rather than coverage — a unit that fails and is then reset
+  within fifteen minutes would go unreported.
 - **A `BackupFailed` push is lost outright if Alertmanager or Telegram is
   unavailable during its 15-minute `endsAt` window**; only `BackupStale`
   backstops it, up to 26 hours later.

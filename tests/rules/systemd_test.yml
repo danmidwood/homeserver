@@ -1,0 +1,80 @@
+rule_files:
+  - ../../roles/prometheus/files/rules/systemd.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A long-running unit that is active stays silent.
+  - interval: 1m
+    input_series:
+      - series: 'node_systemd_unit_state{instance="xps",job="node",name="telegram-bot.service",state="active",type="simple"}'
+        values: '1+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: SystemdUnitFailed
+        exp_alerts: []
+
+  # A long-running unit that stops being active fires after the for: elapses.
+  - interval: 1m
+    input_series:
+      - series: 'node_systemd_unit_state{instance="xps",job="node",name="telegram-bot.service",state="active",type="simple"}'
+        values: '0+0x40'
+    alert_rule_test:
+      # NOT coverage: the condition is already true here, so this only confirms
+      # the 15m `for:` has not been removed. The genuine stays-silent case is
+      # the first test.
+      - eval_time: 5m
+        alertname: SystemdUnitFailed
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: SystemdUnitFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: xps
+              job: node
+              name: telegram-bot.service
+              state: active
+              type: simple
+            exp_annotations:
+              summary: "telegram-bot.service is not running"
+              description: "The systemd unit telegram-bot.service has not been in the active state for over 15 minutes. Run `systemctl status telegram-bot.service` and `journalctl -u telegram-bot.service` on the host."
+
+  # A oneshot unit is inactive between runs, which is entirely normal. Alerting
+  # on not-active would fire constantly for restic-backup and
+  # image-update-check, so the not-running rule is scoped to the long-running
+  # unit and oneshots are covered by the failed-state rule instead.
+  - interval: 1m
+    input_series:
+      - series: 'node_systemd_unit_state{instance="xps",job="node",name="restic-backup.service",state="active",type="oneshot"}'
+        values: '0+0x40'
+      - series: 'node_systemd_unit_state{instance="xps",job="node",name="restic-backup.service",state="failed",type="oneshot"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: SystemdUnitFailed
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: SystemdUnitInFailedState
+        exp_alerts: []
+
+  # A oneshot unit that actually failed does fire. This is what closes the
+  # recorded gap that a failing backup-alert.service notified nobody.
+  - interval: 1m
+    input_series:
+      - series: 'node_systemd_unit_state{instance="xps",job="node",name="backup-alert.service",state="failed",type="oneshot"}'
+        values: '1+0x40'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SystemdUnitInFailedState
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: xps
+              job: node
+              name: backup-alert.service
+              state: failed
+              type: oneshot
+            exp_annotations:
+              summary: "backup-alert.service is in the failed state"
+              description: "The systemd unit backup-alert.service has been in the failed state for over 15 minutes. Run `systemctl status backup-alert.service` and `journalctl -u backup-alert.service` on the host."

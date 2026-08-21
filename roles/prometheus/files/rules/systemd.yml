@@ -1,0 +1,31 @@
+groups:
+  - name: systemd
+    rules:
+      # Two rules rather than one, because "not running" means opposite things
+      # for the two kinds of unit here.
+      #
+      # telegram-bot.service is long-running: not being active IS the fault.
+      # restic-backup.service and image-update-check.service are oneshot units
+      # triggered by timers, and spend almost all their time inactive, which is
+      # entirely healthy. Alerting on not-active would fire constantly for them,
+      # so they are covered by the failed-state rule below instead.
+      - alert: SystemdUnitFailed
+        expr: node_systemd_unit_state{name="telegram-bot.service",state="active"} == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} is not running"
+          description: "The systemd unit {{ $labels.name }} has not been in the active state for over 15 minutes. Run `systemctl status {{ $labels.name }}` and `journalctl -u {{ $labels.name }}` on the host."
+
+      # Covers every watched unit, oneshot included. This is what closes the
+      # recorded gap that a failing backup-alert.service notified nobody: the
+      # backup failure handler itself dying is now visible.
+      - alert: SystemdUnitInFailedState
+        expr: node_systemd_unit_state{state="failed"} == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} is in the failed state"
+          description: "The systemd unit {{ $labels.name }} has been in the failed state for over 15 minutes. Run `systemctl status {{ $labels.name }}` and `journalctl -u {{ $labels.name }}` on the host."

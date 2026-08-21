@@ -52,10 +52,19 @@
     group: root
     mode: '0755'
 
-- name: Enable the node-exporter textfile collector
+- name: Enable the node-exporter textfile and systemd collectors
   ansible.builtin.copy:
     content: |
-      NODE_EXPORTER_ARGS="--collector.textfile.directory=/var/lib/node_exporter/textfile_collector"
+      # The systemd collector reports each unit's state, which is how oneshot
+      # units and background services on this host are monitored. Nothing has
+      # to expose a port or cooperate: a service that is wedged but still
+      # accepting connections would pass an HTTP scrape while failing this
+      # check.
+      #
+      # unit-include is deliberately narrow. Without it the collector exports a
+      # series per unit on the host, which is hundreds of series carrying no
+      # information anyone will ever alert on.
+      NODE_EXPORTER_ARGS="--collector.textfile.directory=/var/lib/node_exporter/textfile_collector --collector.systemd --collector.systemd.unit-include=(telegram-bot|restic-backup|backup-alert|image-update-check|docker)\\.(service|timer)"
     dest: /etc/conf.d/prometheus-node-exporter
     owner: root
     group: root

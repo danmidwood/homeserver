@@ -14,3 +14,7 @@ backup_paths:
   - /mnt/tmdas/Documents
   - /mnt/tmdas/Dev
   - /mnt/tmdas/Piano
+  # Temporary storage, but backed up anyway: restic deduplicates by content, so
+  # once a file is moved to an already-backed-up path both snapshots share its
+  # chunks, and this covers the window before it is filed.
+  - /mnt/storage/telegram-inbox
