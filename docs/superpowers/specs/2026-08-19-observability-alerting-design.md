@@ -194,6 +194,42 @@ backup failure or a new image tag is a moment, not a state; pushed naively it
 would re-notify indefinitely. Both event paths therefore set an explicit
 `endsAt` a few minutes in the future so the alert self-resolves.
 
+### What Diun watches, given digest pinning
+
+Every image in this repo is pinned to both a version tag and a digest, as
+`caddy:2.11.4@sha256:...`. That freezes the digest by definition, so Diun's
+default mode — watch a reference and report when its digest moves — would
+report essentially nothing. The useful signal is that a newer tag exists, which
+is `watch_repo` mode: Diun lists the repository's tags and reports ones it has
+not seen.
+
+The exception is any image whose tag is itself moving. `fauria/vsftpd:latest`
+is watched for digest changes rather than by repository, because repository
+watching there would report every unrelated tag in the repo while missing the
+thing that actually changes.
+
+**No tag filtering initially.** Filtering is deferred until there is a week of
+real traffic to write it from. The asymmetry decides it: excess notifications
+are visible and easily tuned away, whereas a tag pattern that fails to match a
+repository's convention produces no error and no signal, so a missed release
+never announces itself. Several of these repositories use conventions a
+guessed pattern would get wrong — `linuxserver/kavita` appends `-ls120`,
+`plexinc/pms-docker` uses long build strings, and the Immich Postgres image
+encodes extension versions in its tag. Those are precisely the ones where a
+silent miss would matter, so they are observed rather than predicted.
+
+Diun checks daily rather than hourly. Unfiltered repository watching pages the
+full tag list, and some of these repositories publish thousands of tags; a
+daily schedule bounds registry API load without affecting what is reported.
+Diun's `first_check_notif` stays at its default of false, so the initial run
+records the existing tags silently instead of announcing all of them.
+
+Images are discovered through the Docker provider, with per-image settings
+carried as container labels rather than a static list. The image reference and
+its watch rule then live together in the role that owns them, so a service
+added later is watched the moment it ships and the watch list cannot drift from
+what is actually running.
+
 ### Risk: Diun's payload shape
 
 Diun's `webhook` notifier posts Diun's own JSON schema, and it is not
@@ -547,7 +583,8 @@ container on `caddy_network`:
 - `cadvisor` — container, Docker socket mounted read-only, publishes `:8080`
 - `blackbox_exporter` — container, probe module configuration
 - `diun` — container, Docker socket mounted read-only, notifier aimed at
-  Alertmanager
+  Alertmanager, watching by repository with no tag filter (see "What Diun
+  watches, given digest pinning")
 
 ### Modified roles
 
