@@ -49,7 +49,20 @@ echo "==> Checking Prometheus configuration"
 # fails loudly rather than skipping the check — a harness that silently
 # stops validating something is how this regression went unnoticed in the
 # first place.
-PYTHON="$(head -1 "$(command -v ansible-playbook)" | sed 's|^#!||')"
+#
+# Locate ansible-playbook and read its shebang in two separate steps rather
+# than one command substitution: under `set -e`, a `command -v` that finds
+# nothing feeds `head` an empty path, `head` fails, and the *pipeline's*
+# failure would trip `set -e` before our own "could not locate" message is
+# reached — the user would see bash's raw `head: : No such file or
+# directory` instead. Splitting it lets each failure be caught and reported
+# with our own message.
+ANSIBLE_PLAYBOOK_PATH="$(command -v ansible-playbook || true)"
+if [ -z "$ANSIBLE_PLAYBOOK_PATH" ]; then
+  echo "ERROR: could not locate ansible-playbook on PATH. Cannot render prometheus.yml.j2 to validate it." >&2
+  exit 1
+fi
+PYTHON="$(head -1 "$ANSIBLE_PLAYBOOK_PATH" 2>/dev/null | sed 's|^#!||' || true)"
 if [ -z "$PYTHON" ] || [ ! -x "$PYTHON" ]; then
   echo "ERROR: could not locate the Python interpreter behind ansible-playbook. Cannot render prometheus.yml.j2 to validate it." >&2
   exit 1
@@ -75,11 +88,40 @@ with open("roles/prometheus/defaults/main.yml") as f:
 with open("roles/prometheus/templates/prometheus.yml.j2") as f:
     template_src = f.read()
 
-rendered = jinja2.Environment().from_string(template_src).render(**variables)
+# StrictUndefined turns a missing/renamed variable into a raised error
+# during render instead of silent empty output. Without it, a variable like
+# monitored_endpoints being renamed or removed from defaults/main.yml would
+# render the blackbox job with an empty targets list rather than failing —
+# a config that promtool would happily call valid while probing nothing.
+env = jinja2.Environment(undefined=jinja2.StrictUndefined)
+try:
+    rendered = env.from_string(template_src).render(**variables)
+except jinja2.exceptions.UndefinedError as e:
+    print(f"ERROR: rendering prometheus.yml.j2 failed: {e}", file=sys.stderr)
+    sys.exit(1)
 
 with open(out_path, "w") as f:
     f.write(rendered)
 PYEOF
+
+# promtool check config treats a completely empty file as syntactically
+# valid ("valid prometheus config file syntax") — it has no opinion on
+# content it never received. So a render that produces nothing (a
+# truncated template, or a Jinja bug that swallows output) would otherwise
+# sail through promtool and the harness would report success while
+# checking nothing at all, exactly the failure this render step exists to
+# prevent. These two checks close that gap explicitly, before promtool
+# ever sees the file: non-emptiness catches a totally blank render, and the
+# scrape_configs: anchor catches a render that produced only a comment or
+# stray whitespace and would otherwise slip past the emptiness check alone.
+if [ ! -s "$RENDERED_CONFIG" ]; then
+  echo "ERROR: rendering prometheus.yml.j2 produced an empty file at $RENDERED_CONFIG. promtool treats an empty file as a valid config, so this is checked explicitly rather than left to promtool." >&2
+  exit 1
+fi
+if ! grep -qF 'scrape_configs:' "$RENDERED_CONFIG"; then
+  echo "ERROR: the rendered config at $RENDERED_CONFIG has no scrape_configs: section. The render may have produced only a comment or partial output." >&2
+  exit 1
+fi
 
 promtool_run check config "${RENDERED_CONFIG#"$REPO_ROOT"/}"
 
