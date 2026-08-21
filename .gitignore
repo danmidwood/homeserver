@@ -2,3 +2,9 @@
 /user_passwords.yml*
 /.#user_passwords.yml
 /.superpowers/
+
+# tests/run-promtool.sh renders prometheus.yml.j2 (it contains Jinja) into
+# this file to validate the real deployed config. The harness cleans it up
+# via an EXIT trap on a normal run, but an interrupted run (Ctrl-C, a
+# crash, a killed terminal) can leave it behind untracked.
+/tests/.prometheus.rendered.*
