@@ -728,20 +728,20 @@ expendable.
   Adding a second host to this Prometheus would let one host's container
   satisfy another host's expected entry, silently defeating
   `ContainerMissing` for both.
-- **A Caddyfile change alone never reaches the running Caddy.** The role
-  writes the config with `copy:` and then declares the container with
-  `state: started`, which is idempotent — so Ansible neither restarts nor
-  reloads Caddy when only the config changed, and there is no handler that
-  would. Compounding it, the Caddyfile is bind-mounted as a single file, so
-  Docker pins the mount to one inode while `copy:` writes atomically via a
-  temporary file and a rename; the container goes on reading the orphaned
-  inode even once the host file is correct. Config edits have therefore been
-  landing only incidentally, when an image pin changed and Docker recreated
-  the container. Fixing it properly means bind-mounting the parent directory
-  rather than the file, and adding a handler that reloads Caddy when the
-  config changes. Found during increment 5 fault injection, where restoring
-  the wedged upstream required writing into the pinned inode directly
-  because `ansible-playbook` did not restore the live container.
+- **Single-file bind mounts and atomic writes are incompatible, and the
+  remaining roles are safe only by accident of restarting.** Docker pins a
+  single-file bind mount to one inode; `copy:` and `template:` write via a
+  temporary file and a rename, which unlinks that inode and leaves the
+  container reading a file the host no longer has (`Links: 0`). The Caddy
+  role hit this in its worst form — it also had no handler at all, so a
+  Caddyfile edit reached the running proxy only when an image pin happened
+  to recreate the container. It now mounts the parent directory and reloads
+  on change. Prometheus, Alertmanager and blackbox still bind-mount single
+  config files and are correct today only because their handlers use
+  `restart: true`, which re-resolves the mount — verified by comparing host
+  and container inodes across all four containers. Converting any of those
+  handlers to an in-place reload, the obvious "improvement", would silently
+  reintroduce the fault.
 
 ## Phase 2: inbound Telegram bot
 

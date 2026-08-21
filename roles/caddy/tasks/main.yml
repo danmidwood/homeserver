@@ -31,9 +31,25 @@
     group: daniel
     mode: '0755'
 
+- name: Create Caddy Caddyfile directory
+  # The Caddyfile lives in its own directory because that directory, not the
+  # file, is what gets bind-mounted. Docker pins a single-file bind mount to
+  # one inode, and `copy:` writes atomically via a temporary file and a
+  # rename — which orphans that inode, leaving the container reading a file
+  # the host no longer has. Mounting the parent directory makes the
+  # container see whatever the directory currently holds. `data` and
+  # `config` are kept out of it so the certificate store is not exposed
+  # under a second path.
+  file:
+    path: /mnt/storage/config/caddy/conf
+    state: directory
+    owner: daniel
+    group: daniel
+    mode: '0755'
+
 - name: Put Caddy config in place
   copy:
-    dest: /mnt/storage/config/caddy/Caddyfile
+    dest: /mnt/storage/config/caddy/conf/Caddyfile
     content: |
       budget.home.danmidwood.com {
         reverse_proxy actual_budget:5006
@@ -62,6 +78,7 @@
       passwords.home.danmidwood.com {
         reverse_proxy vaultwarden:80
       }
+  notify: Reload Caddy
 
 - name: Run Caddy container
   community.docker.docker_container:
@@ -70,7 +87,7 @@
     state: started
     restart_policy: always
     volumes:
-      - /mnt/storage/config/caddy/Caddyfile:/etc/caddy/Caddyfile
+      - /mnt/storage/config/caddy/conf:/etc/caddy:ro
       - /mnt/storage/config/caddy/data:/data
       - /mnt/storage/config/caddy/config:/config
     ports:
@@ -78,3 +95,11 @@
       - "443:443"
     networks:
       - name: caddy_network
+
+- name: Remove the superseded single-file Caddyfile
+  # Predecessor of conf/Caddyfile. Left in place it is an active trap: it
+  # looks like the live config, is what someone would reach for and edit,
+  # and is no longer mounted into anything.
+  file:
+    path: /mnt/storage/config/caddy/Caddyfile
+    state: absent

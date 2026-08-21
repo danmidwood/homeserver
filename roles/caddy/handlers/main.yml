@@ -1,0 +1,10 @@
+- name: Reload Caddy
+  # Reload rather than restart, unlike every other role here, because Caddy
+  # fronts all seven services. `caddy reload` parses and validates the new
+  # config before applying it, and leaves the running config in place if it
+  # is invalid — so a typo costs nothing. A restart would take the container
+  # down, fail to start on the bad config, and hand Docker a crash loop with
+  # every service behind it offline. Reload is also connection-preserving.
+  ansible.builtin.command:
+    cmd: docker exec caddy caddy reload --config /etc/caddy/Caddyfile
+  changed_when: true
