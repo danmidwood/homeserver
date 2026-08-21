@@ -804,6 +804,19 @@ expendable.
   Adding a second host to this Prometheus would let one host's container
   satisfy another host's expected entry, silently defeating
   `ContainerMissing` for both.
+- **restic cannot take locks on this backend.** Backblaze B2's S3 API rejects
+  the storage class header restic sends when writing a lock object ("Storage
+  class not supported on this cluster: STANDARD"), so every restic command
+  that locks fails. Backups and restores are unaffected — verified live: six
+  snapshots exist, `restic snapshots --no-lock` and `restic ls latest` both
+  read them, and the nightly backup runs clean — but anything needing an
+  exclusive lock, `prune` and `forget` among them, cannot run at all. Pruning
+  was already blocked by the deliberately delete-incapable B2 key, so nothing
+  is lost today; it does mean the eventual pruning story needs a different
+  backend, a different key, or a restic release that lets the storage class be
+  set. Discovered when the Ansible repository-existence check took a lock,
+  failed, fell through to `restic init`, and failed the play against a healthy
+  repository.
 - **The FTP image is abandoned upstream.** `fauria/vsftpd` publishes only a
   `latest` tag and was last pushed in January 2023, so no update can ever be
   reported for it and the image-update check will stay silent about it

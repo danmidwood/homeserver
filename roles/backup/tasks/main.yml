@@ -94,11 +94,22 @@
     daemon_reload: true
 
 - name: Initialise restic repository if not already initialised
+  # --no-lock is required, not merely tidy. Backblaze B2's S3 API rejects the
+  # storage class header restic sends when it writes a lock object ("Storage
+  # class not supported on this cluster: STANDARD"), so any restic command
+  # that takes a lock fails on this backend. Without --no-lock this existence
+  # check failed on an already-initialised repository, fell through to
+  # `restic init`, and failed the whole play with "repository master key and
+  # config already initialized" -- on a repository that was healthy and being
+  # backed up nightly.
+  #
+  # Reading snapshots needs no lock in any case; taking one to answer "does
+  # this repository exist" was always wrong.
   ansible.builtin.shell: |
     set -a
     . /etc/restic/env
     set +a
-    restic snapshots >/dev/null 2>&1 || restic init
+    restic snapshots --no-lock >/dev/null 2>&1 || restic init
   args:
     executable: /bin/bash
   changed_when: false
