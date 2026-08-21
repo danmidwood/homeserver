@@ -410,18 +410,54 @@ rejected both here and for the mount reductions above.
 
 ### Reachability and TLS — blackbox exporter
 
+The blackbox exporter runs as a digest-pinned container on `caddy_network`.
+Prometheus scrapes it once per endpoint, passing the target as a parameter, so
+the endpoint list lives in the scrape config rather than in a rule. The rules
+themselves stay static and testable — `probe_success == 0` needs no knowledge
+of which endpoints exist.
+
 | Alert | Condition | Severity |
 |---|---|---|
 | `EndpointDown` | `probe_success == 0` for 5m | critical |
-| `CertExpiringSoon` | `probe_ssl_earliest_cert_expiry - time() < 14d` | warning |
+| `CertExpiringSoon` | under 14 days of certificate validity left | warning |
+| `BlackboxMetricsMissing` | no probe results are being exported at all | warning |
 
-Templated from a `monitored_endpoints` variable, matching the Caddyfile
-hostnames. The certificate alert is a renewal-is-broken detector rather than
-an expiry detector: Caddy renews at 30 days, so reaching 14 means something
-has gone wrong.
+The certificate alert is a renewal-is-broken detector rather than an expiry
+detector: Caddy renews at 30 days, so reaching 14 means something has gone
+wrong. `BlackboxMetricsMissing` exists for the same reason as its siblings
+elsewhere in this design — a comparison cannot fire on an absent series, so
+without it a prober that stopped running would leave `EndpointDown` silently
+unarmed.
 
-This bundle catches the failure class that container metrics miss entirely —
-the container is up and healthy but the application inside is wedged.
+**What the probe actually tests, and what it does not.** The hostnames resolve
+to a public address, and the server can reach its own public IP because the
+router supports NAT hairpinning — verified. So a probe originating on the
+server still traverses DNS, the router's port forwarding, Caddy, TLS
+termination and the upstream container. That is the full path a visitor takes,
+with one exception: NAT loopback works whether or not the internet connection
+is up, so this **cannot distinguish "the ISP is down" from "everything is
+fine"**. Only an off-box prober could, and the Healthchecks heartbeat covers
+the machine being alive rather than the services being reachable.
+
+**Plex needs a different path from the others.** `https://plex.home.danmidwood.com/`
+returns 401 — its root requires authentication — so a default probe would
+report it permanently down and `EndpointDown` would fire forever, which is the
+fastest way to teach a reader to ignore Telegram. Plex exposes `/identity`
+unauthenticated, returning 200 with a `machineIdentifier`, and that is what is
+probed. Grafana redirects `/` to `/login`; the probe module follows redirects,
+so it resolves to 200 without special handling.
+
+**The `instance` label deviates here, deliberately.** Everywhere else in this
+design `instance` is `xps`, because everything else describes one machine.
+Blackbox's convention makes `instance` the probed URL, which is both necessary
+— each target needs its own identity — and better for reading an alert, since
+the message names the endpoint that is down rather than the host doing the
+probing.
+
+This bundle catches the failure class that container metrics miss entirely:
+the container is running and healthy while the application inside it is
+wedged, or Caddy has lost its upstream, or a certificate has quietly stopped
+renewing.
 
 ### Meta
 
