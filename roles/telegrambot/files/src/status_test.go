@@ -107,3 +107,30 @@ func TestStatusIgnoresWatchdog(t *testing.T) {
 		t.Errorf("with only Watchdog active, status should say nothing is firing: %q", got)
 	}
 }
+
+// Six alerts of one name are six firing alerts, not one. The first live run
+// rendered "1 firing: ImageUpdateAvailable x6", which contradicts itself.
+func TestStatusCountsAlertsNotNames(t *testing.T) {
+	prom := promServer(t, "18")
+	am := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var out []map[string]any
+		for i := 0; i < 6; i++ {
+			out = append(out, map[string]any{
+				"labels": map[string]string{"alertname": "ImageUpdateAvailable"},
+				"status": map[string]any{"state": "active"},
+			})
+		}
+		json.NewEncoder(w).Encode(out)
+	}))
+	defer am.Close()
+
+	b := &Bot{PromURL: prom.URL, AlertURL: am.URL, TG: &Client{HTTP: http.DefaultClient}}
+	got := b.status(context.Background())
+
+	if !strings.Contains(got, "6 firing") {
+		t.Errorf("expected the alert total, got %q", got)
+	}
+	if strings.Contains(got, "1 firing") {
+		t.Errorf("reported the name count as the alert count: %q", got)
+	}
+}

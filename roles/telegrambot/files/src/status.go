@@ -55,15 +55,18 @@ func promScalar(ctx context.Context, base, query string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
 }
 
-func firingAlertNames(ctx context.Context, base string) ([]string, error) {
+// Returns the rendered names and the TOTAL number of firing alerts, which are
+// different numbers: six ImageUpdateAvailable alerts are one name. Reporting the
+// name count as though it were the alert count produced "1 firing: X ×6".
+func firingAlertNames(ctx context.Context, base string) ([]string, int, error) {
 	endpoint := strings.TrimRight(base, "/") + "/api/v2/alerts"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 
@@ -74,10 +77,11 @@ func firingAlertNames(ctx context.Context, base string) ([]string, error) {
 		} `json:"status"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&alerts); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	counts := map[string]int{}
+	total := 0
 	for _, a := range alerts {
 		if a.Status.State != "active" {
 			continue
@@ -89,6 +93,7 @@ func firingAlertNames(ctx context.Context, base string) ([]string, error) {
 			continue
 		}
 		counts[name]++
+		total++
 	}
 
 	names := make([]string, 0, len(counts))
@@ -105,7 +110,7 @@ func firingAlertNames(ctx context.Context, base string) ([]string, error) {
 			out = append(out, html.EscapeString(n))
 		}
 	}
-	return out, nil
+	return out, total, nil
 }
 
 func (b *Bot) status(ctx context.Context) string {
@@ -139,12 +144,12 @@ func (b *Bot) status(ctx context.Context) string {
 		lines = append(lines, "❓ backup: no timestamp recorded")
 	}
 
-	if names, err := firingAlertNames(ctx, b.AlertURL); err != nil {
+	if names, total, err := firingAlertNames(ctx, b.AlertURL); err != nil {
 		lines = append(lines, "❓ alerts: Alertmanager did not answer")
-	} else if len(names) == 0 {
+	} else if total == 0 {
 		lines = append(lines, "✅ no alerts firing")
 	} else {
-		lines = append(lines, fmt.Sprintf("⚠️ %d firing: %s", len(names), strings.Join(names, ", ")))
+		lines = append(lines, fmt.Sprintf("⚠️ %d firing: %s", total, strings.Join(names, ", ")))
 	}
 
 	return strings.Join(lines, "\n")
