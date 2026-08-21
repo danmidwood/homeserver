@@ -20,11 +20,15 @@ const maxNameLen = 120
 // sanitizeFilename turns a remote-supplied name into something safe to join to
 // the inbox path.
 //
-// Order matters. The basename is taken first, using both separators, because a
-// Windows client can send backslashes that Go's path handling would treat as an
-// ordinary character. Only then is the character set reduced, so that a name
-// like "../x" cannot survive by having its slashes rewritten into something
-// harmless-looking after the fact.
+// Containment comes from the character-set reduction alone: every separator
+// becomes an underscore, so nothing that survives can traverse a directory.
+// That holds whichever order these two steps run in.
+//
+// The basename is taken first anyway, so that names stay meaningful rather than
+// merely safe: "../../etc/passwd" should save as "passwd", not the mangled
+// "_.._etc_passwd" the inverted order produces. Backslashes are normalised
+// first because a Windows client can send them and Go's path.Base treats them
+// as ordinary characters. A test pins both properties.
 func sanitizeFilename(name string) string {
 	name = strings.ReplaceAll(name, `\`, "/")
 	name = path.Base(name)
