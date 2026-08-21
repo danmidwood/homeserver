@@ -93,6 +93,8 @@ with open("roles/prometheus/templates/prometheus.yml.j2") as f:
 # monitored_endpoints being renamed or removed from defaults/main.yml would
 # render the blackbox job with an empty targets list rather than failing —
 # a config that promtool would happily call valid while probing nothing.
+# It does NOT catch a variable that is merely defined-but-empty (e.g.
+# monitored_endpoints: []); that case is caught below, structurally.
 env = jinja2.Environment(undefined=jinja2.StrictUndefined)
 try:
     rendered = env.from_string(template_src).render(**variables)
@@ -104,24 +106,57 @@ with open(out_path, "w") as f:
     f.write(rendered)
 PYEOF
 
-# promtool check config treats a completely empty file as syntactically
-# valid ("valid prometheus config file syntax") — it has no opinion on
-# content it never received. So a render that produces nothing (a
-# truncated template, or a Jinja bug that swallows output) would otherwise
-# sail through promtool and the harness would report success while
-# checking nothing at all, exactly the failure this render step exists to
-# prevent. These two checks close that gap explicitly, before promtool
-# ever sees the file: non-emptiness catches a totally blank render, and the
-# scrape_configs: anchor catches a render that produced only a comment or
-# stray whitespace and would otherwise slip past the emptiness check alone.
+# promtool check config treats an empty or comment-only file as
+# syntactically valid ("valid prometheus config file syntax") — it has no
+# opinion on content it never received, and a render that produces nothing,
+# or nothing but comments, would otherwise sail through it. A prior version
+# of this check tried to catch that with a `grep -qF 'scrape_configs:'`
+# substring match, but a substring is not a structural claim: a render of
+# the single line `# scrape_configs:` satisfies it while being a comment,
+# and it cannot see that a job's static_configs declared zero targets
+# either (a defined-but-empty monitored_endpoints: [] renders a valid
+# `targets: []`, which StrictUndefined never touches since the variable is
+# not undefined, only empty). So the check now PARSES the rendered YAML
+# and asserts its actual shape, rather than guessing from its text.
 if [ ! -s "$RENDERED_CONFIG" ]; then
   echo "ERROR: rendering prometheus.yml.j2 produced an empty file at $RENDERED_CONFIG. promtool treats an empty file as a valid config, so this is checked explicitly rather than left to promtool." >&2
   exit 1
 fi
-if ! grep -qF 'scrape_configs:' "$RENDERED_CONFIG"; then
-  echo "ERROR: the rendered config at $RENDERED_CONFIG has no scrape_configs: section. The render may have produced only a comment or partial output." >&2
-  exit 1
-fi
+
+"$PYTHON" - "$RENDERED_CONFIG" <<'PYEOF'
+import sys
+import yaml
+
+path = sys.argv[1]
+
+
+def fail(assertion):
+    print(f"ERROR: rendered config at {path} failed structural check: {assertion}", file=sys.stderr)
+    sys.exit(1)
+
+
+with open(path) as f:
+    doc = yaml.safe_load(f)
+
+if not isinstance(doc, dict):
+    fail("parsed document is not a mapping (empty, a comment-only file, a scalar, or a list all parse this way)")
+
+scrape_configs = doc.get("scrape_configs")
+if not isinstance(scrape_configs, list) or len(scrape_configs) == 0:
+    fail("scrape_configs is missing, not a list, or empty")
+
+target_count = 0
+for job in scrape_configs:
+    if not isinstance(job, dict) or not job.get("job_name"):
+        fail(f"a scrape_configs entry has no non-empty job_name: {job!r}")
+    for static_config in job.get("static_configs", []):
+        targets = static_config.get("targets")
+        if not isinstance(targets, list) or len(targets) == 0:
+            fail(f"job {job.get('job_name')!r} has a static_configs entry with an empty or missing targets list")
+        target_count += len(targets)
+
+print(f"Structural check passed: {len(scrape_configs)} scrape_configs job(s), {target_count} total static targets across all jobs")
+PYEOF
 
 promtool_run check config "${RENDERED_CONFIG#"$REPO_ROOT"/}"
 
