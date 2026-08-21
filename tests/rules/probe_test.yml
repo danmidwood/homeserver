@@ -1,0 +1,112 @@
+rule_files:
+  - ../../roles/prometheus/files/rules/probe.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A healthy endpoint with a distant certificate expiry: complete silence.
+  # promtool's clock starts at zero, so a certificate expiring at 2000000
+  # seconds is comfortably more than 14 days (1209600s) away at these
+  # evaluation times.
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{instance="https://books.home.danmidwood.com",job="blackbox"}'
+        values: '1+0x80'
+      - series: 'probe_ssl_earliest_cert_expiry{instance="https://books.home.danmidwood.com",job="blackbox"}'
+        values: '2000000+0x80'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: EndpointDown
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: CertExpiringSoon
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: BlackboxMetricsMissing
+        exp_alerts: []
+
+  # An endpoint that stops answering.
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{instance="https://passwords.home.danmidwood.com",job="blackbox"}'
+        values: '0+0x30'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: EndpointDown
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: EndpointDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              instance: https://passwords.home.danmidwood.com
+              job: blackbox
+            exp_annotations:
+              summary: "https://passwords.home.danmidwood.com is not answering"
+              description: "The probe to https://passwords.home.danmidwood.com has failed for over 5 minutes. The container may be running while the application inside it is wedged, or Caddy may have lost its upstream. Check `docker ps` and Caddy's logs."
+
+  # A certificate inside the 14-day window while the endpoint still works.
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{instance="https://photos.home.danmidwood.com",job="blackbox"}'
+        values: '1+0x80'
+      - series: 'probe_ssl_earliest_cert_expiry{instance="https://photos.home.danmidwood.com",job="blackbox"}'
+        values: '1000000+0x80'
+    alert_rule_test:
+      # NOT coverage: the condition is already true here, so this only
+      # confirms the 1h `for:` has not been removed. The genuine
+      # stays-silent case is the first test's distant expiry at 70m.
+      - eval_time: 30m
+        alertname: CertExpiringSoon
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: CertExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: https://photos.home.danmidwood.com
+              job: blackbox
+            exp_annotations:
+              summary: "https://photos.home.danmidwood.com certificate expires soon"
+              description: "The certificate for https://photos.home.danmidwood.com has under 14 days left. Caddy renews at 30 days, so renewal has already been failing for two weeks. Check `docker logs caddy` for ACME errors."
+
+  # A near-expiry certificate on an endpoint that is DOWN must not add a
+  # second alert: EndpointDown already covers it, and a failed TLS handshake
+  # is why the expiry looks alarming in the first place.
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{instance="https://plex.home.danmidwood.com/identity",job="blackbox"}'
+        values: '0+0x80'
+      - series: 'probe_ssl_earliest_cert_expiry{instance="https://plex.home.danmidwood.com/identity",job="blackbox"}'
+        values: '1000000+0x80'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: CertExpiringSoon
+        exp_alerts: []
+
+  # No probe results at all — the exporter stopped or was never scraped.
+  - interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: BlackboxMetricsMissing
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: BlackboxMetricsMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "No endpoint probes are being returned"
+              description: "No probe_success metric exists, so EndpointDown cannot fire and no endpoint is being checked. Check that the blackbox container is running and that Prometheus's blackbox job is up."
+
+  # Probes being returned keeps BlackboxMetricsMissing quiet well past its
+  # for:, so the assertion can actually fail if the rule were inverted.
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{instance="https://books.home.danmidwood.com",job="blackbox"}'
+        values: '1+0x80'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: BlackboxMetricsMissing
+        exp_alerts: []

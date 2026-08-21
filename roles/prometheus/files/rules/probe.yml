@@ -1,0 +1,48 @@
+groups:
+  - name: probe
+    rules:
+      # These probes traverse the real external path — DNS, the router's
+      # port forwarding, Caddy, TLS, and the upstream container — so they
+      # catch the failure container metrics cannot see: the container is
+      # running and healthy while the application inside it is wedged.
+
+      - alert: EndpointDown
+        expr: probe_success == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} is not answering"
+          description: "The probe to {{ $labels.instance }} has failed for over 5 minutes. The container may be running while the application inside it is wedged, or Caddy may have lost its upstream. Check `docker ps` and Caddy's logs."
+
+      - alert: CertExpiringSoon
+        # A renewal-is-broken detector, not an expiry detector: Caddy renews
+        # at 30 days, so reaching 14 means renewal has been failing for a
+        # fortnight.
+        #
+        # The probe_success guard matters. When a probe fails the expiry
+        # metric can read zero, which looks like a certificate that expired
+        # in 1970 and would fire this rule alongside EndpointDown for the
+        # same underlying fault. One alert per fault.
+        expr: |
+          (probe_ssl_earliest_cert_expiry - time() < 14 * 24 * 3600)
+            and on(instance) (probe_success == 1)
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} certificate expires soon"
+          description: "The certificate for {{ $labels.instance }} has under 14 days left. Caddy renews at 30 days, so renewal has already been failing for two weeks. Check `docker logs caddy` for ACME errors."
+
+      - alert: BlackboxMetricsMissing
+        # Not redundant with EndpointDown: that compares a value, and an
+        # absent series has no value to compare. Without this, an exporter
+        # that stopped being scraped would leave every endpoint unwatched
+        # while nothing fired.
+        expr: absent(probe_success)
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "No endpoint probes are being returned"
+          description: "No probe_success metric exists, so EndpointDown cannot fire and no endpoint is being checked. Check that the blackbox container is running and that Prometheus's blackbox job is up."
