@@ -33,6 +33,7 @@ smart_devices:
 monitored_containers:
   - actual_budget
   - alertmanager
+  - blackbox
   - cadvisor
   - caddy
   - ftp_server
