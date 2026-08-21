@@ -1,8 +1,23 @@
-- name: Restart Prometheus
-  community.docker.docker_container:
-    name: prometheus
-    state: started
-    restart: true
+- name: Reload Prometheus
+  # Reload rather than restart. A restart punches a gap in every graph and
+  # replays the WAL for no reason when only config or rules changed.
+  #
+  # Validated first, deliberately. On SIGHUP with a bad config Prometheus
+  # logs the error and silently keeps running the OLD config — so without
+  # this check Ansible would report success for a change that never took
+  # effect, which is exactly the failure mode a restart would have made
+  # obvious. promtool turns that into a failed play.
+  #
+  # `--web.enable-lifecycle` is deliberately omitted from the container, so
+  # SIGHUP is the reload mechanism; there is no HTTP reload endpoint to
+  # expose on the LAN.
+  ansible.builtin.shell: |
+    set -e
+    docker exec prometheus promtool check config /etc/prometheus/conf/prometheus.yml
+    docker kill -s HUP prometheus
+  args:
+    executable: /bin/bash
+  changed_when: true
 
 - name: Restart node-exporter
   ansible.builtin.systemd:

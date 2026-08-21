@@ -1,5 +1,7 @@
-- name: Restart blackbox
-  community.docker.docker_container:
-    name: blackbox
-    state: started
-    restart: true
+- name: Reload blackbox
+  # Blackbox ships no config validator, so this is a bare SIGHUP. A bad
+  # config leaves the previous one running and logs the error; the probe
+  # rules in probe.yml are what would notice the consequence.
+  ansible.builtin.command:
+    cmd: docker kill -s HUP blackbox
+  changed_when: true

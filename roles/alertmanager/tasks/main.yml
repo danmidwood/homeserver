@@ -24,20 +24,34 @@
     group: '65534'
     mode: '0755'
 
+- name: Create the bind-mounted Alertmanager conf directory
+  # The DIRECTORY is bind-mounted, not the files. A single-file bind mount
+  # pins Docker to one inode, and copy:/template: write atomically via a
+  # rename that orphans it, leaving the container reading a file the host no
+  # longer has — which an in-place reload would re-read as though current.
+  # `data` is kept out of it so the silence and notification log are not
+  # exposed under a second path.
+  ansible.builtin.file:
+    path: /mnt/storage/config/alertmanager/conf
+    state: directory
+    owner: '65534'
+    group: '65534'
+    mode: '0755'
+
 - name: Write the Telegram bot token
   ansible.builtin.copy:
     content: "{{ telegram_bot_token }}"
-    dest: /mnt/storage/config/alertmanager/telegram_token
+    dest: /mnt/storage/config/alertmanager/conf/telegram_token
     owner: '65534'
     group: '65534'
     mode: '0600'
   no_log: true
-  notify: Restart Alertmanager
+  notify: Reload Alertmanager
 
 - name: Template Alertmanager configuration
   ansible.builtin.template:
     src: alertmanager.yml.j2
-    dest: /mnt/storage/config/alertmanager/alertmanager.yml
+    dest: /mnt/storage/config/alertmanager/conf/alertmanager.yml
     owner: '65534'
     group: '65534'
     mode: '0640'
@@ -47,7 +61,7 @@
   # template reports without detail; the token file beside it is already
   # protected the same way.
   no_log: true
-  notify: Restart Alertmanager
+  notify: Reload Alertmanager
 
 - name: Pull the Alertmanager image
   community.docker.docker_image_pull:
@@ -65,9 +79,18 @@
     ports:
       - "9093:9093"
     volumes:
-      - /mnt/storage/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - /mnt/storage/config/alertmanager/telegram_token:/etc/alertmanager/telegram_token:ro
+      - /mnt/storage/config/alertmanager/conf:/etc/alertmanager/conf:ro
       - /mnt/storage/config/alertmanager/data:/alertmanager
     command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--config.file=/etc/alertmanager/conf/alertmanager.yml"
       - "--storage.path=/alertmanager"
+
+- name: Remove the superseded single-file Alertmanager config and token
+  # Predecessors of the files now in conf/. The token copy matters most:
+  # a stale bot credential left readable on disk is worse than untidy.
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /mnt/storage/config/alertmanager/alertmanager.yml
+    - /mnt/storage/config/alertmanager/telegram_token

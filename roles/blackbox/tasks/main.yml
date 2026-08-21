@@ -6,14 +6,24 @@
     group: root
     mode: '0755'
 
+- name: Create the bind-mounted blackbox conf directory
+  # The DIRECTORY is bind-mounted, not the file: a single-file bind mount
+  # pins Docker to one inode that copy:'s atomic rename then orphans.
+  ansible.builtin.file:
+    path: /mnt/storage/config/blackbox/conf
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
 - name: Write the blackbox probe module config
   ansible.builtin.copy:
     src: blackbox.yml
-    dest: /mnt/storage/config/blackbox/blackbox.yml
+    dest: /mnt/storage/config/blackbox/conf/blackbox.yml
     owner: root
     group: root
     mode: '0644'
-  notify: Restart blackbox
+  notify: Reload blackbox
 
 - name: Pull the blackbox exporter image
   community.docker.docker_image_pull:
@@ -29,6 +39,11 @@
     networks:
       - name: caddy_network
     volumes:
-      - /mnt/storage/config/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+      - /mnt/storage/config/blackbox/conf:/etc/blackbox_exporter/conf:ro
     command:
-      - "--config.file=/etc/blackbox_exporter/config.yml"
+      - "--config.file=/etc/blackbox_exporter/conf/blackbox.yml"
+
+- name: Remove the superseded single-file blackbox config
+  ansible.builtin.file:
+    path: /mnt/storage/config/blackbox/blackbox.yml
+    state: absent

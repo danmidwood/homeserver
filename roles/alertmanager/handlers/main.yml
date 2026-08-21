@@ -1,5 +1,14 @@
-- name: Restart Alertmanager
-  community.docker.docker_container:
-    name: alertmanager
-    state: started
-    restart: true
+- name: Reload Alertmanager
+  # Reload rather than restart: a restart discards in-flight notification
+  # grouping and repeat timers, which can re-send or delay an alert.
+  #
+  # Validated first for the same reason as Prometheus — on SIGHUP with a bad
+  # config Alertmanager keeps the old one and only logs, so an unchecked
+  # reload would report success while changing nothing.
+  ansible.builtin.shell: |
+    set -e
+    docker exec alertmanager amtool check-config /etc/alertmanager/conf/alertmanager.yml
+    docker kill -s HUP alertmanager
+  args:
+    executable: /bin/bash
+  changed_when: true

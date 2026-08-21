@@ -159,6 +159,34 @@ alerts directly into Alertmanager. Alertmanager is the single exit point.
 
 Nothing new is added to the Caddyfile.
 
+### Configuration delivery
+
+**Never bind-mount a single config file into a container.** Docker pins such a
+mount to one inode, while Ansible's `copy:` and `template:` write atomically
+via a temporary file and a rename — which unlinks that inode and leaves the
+container reading a file the host no longer has (`Links: 0`). The change looks
+applied on the host and is invisible inside the container.
+
+Every config directory is therefore bind-mounted as a *directory*, with the
+config file inside it, and TSDB or state directories kept out of that directory
+so they are not exposed under a second path.
+
+Config changes are then delivered by reload, not restart:
+
+| Component | Mechanism | Why |
+|---|---|---|
+| Prometheus | `promtool check config`, then `SIGHUP` | A restart punches a gap in every graph and replays the WAL. `--web.enable-lifecycle` is omitted, so SIGHUP is the only reload path |
+| Alertmanager | `amtool check-config`, then `SIGHUP` | A restart discards in-flight notification grouping and repeat timers |
+| Caddy | `caddy reload` (validates internally) | Fronts all seven services; a restart on a bad config crash-loops every one of them |
+| blackbox | `SIGHUP` | Ships no validator; stateless, so a restart would also have been cheap |
+| Grafana | restart | Has no reload mechanism — provisioning is read at startup. Already mounts directories, so it was never exposed to the inode trap |
+
+The validation step is not optional. On SIGHUP with a bad config these
+components log the error and silently keep running the previous config, so an
+unchecked reload would let Ansible report success for a change that never took
+effect — the one respect in which reload is weaker than restart, closed by
+checking first and failing the play.
+
 ### One-shot events need explicit expiry
 
 Alertmanager's model is that an alert is firing until it stops being sent. A
@@ -728,20 +756,6 @@ expendable.
   Adding a second host to this Prometheus would let one host's container
   satisfy another host's expected entry, silently defeating
   `ContainerMissing` for both.
-- **Single-file bind mounts and atomic writes are incompatible, and the
-  remaining roles are safe only by accident of restarting.** Docker pins a
-  single-file bind mount to one inode; `copy:` and `template:` write via a
-  temporary file and a rename, which unlinks that inode and leaves the
-  container reading a file the host no longer has (`Links: 0`). The Caddy
-  role hit this in its worst form — it also had no handler at all, so a
-  Caddyfile edit reached the running proxy only when an image pin happened
-  to recreate the container. It now mounts the parent directory and reloads
-  on change. Prometheus, Alertmanager and blackbox still bind-mount single
-  config files and are correct today only because their handlers use
-  `restart: true`, which re-resolves the mount — verified by comparing host
-  and container inodes across all four containers. Converting any of those
-  handlers to an in-place reload, the obvious "improvement", would silently
-  reintroduce the fault.
 
 ## Phase 2: inbound Telegram bot
 

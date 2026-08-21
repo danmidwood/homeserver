@@ -139,14 +139,28 @@
     group: '65534'
     mode: '0755'
 
+- name: Create the bind-mounted Prometheus conf directory
+  # The config lives in its own directory because the DIRECTORY is what gets
+  # bind-mounted. A single-file bind mount pins Docker to one inode, and
+  # template: writes atomically via a rename that orphans it — the container
+  # would go on reading a file the host no longer has, and an in-place reload
+  # would faithfully re-read the stale copy. `data` is kept out of this
+  # directory so the TSDB is not exposed under a second path.
+  ansible.builtin.file:
+    path: /mnt/storage/config/prometheus/conf
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
 - name: Template Prometheus configuration
   ansible.builtin.template:
     src: prometheus.yml.j2
-    dest: /mnt/storage/config/prometheus/prometheus.yml
+    dest: /mnt/storage/config/prometheus/conf/prometheus.yml
     owner: root
     group: root
     mode: '0644'
-  notify: Restart Prometheus
+  notify: Reload Prometheus
 
 - name: Discover the current set of Prometheus rule files in the repo
   ansible.builtin.set_fact:
@@ -161,7 +175,7 @@
     mode: '0644'
   with_fileglob:
     - "rules/*.yml"
-  notify: Restart Prometheus
+  notify: Reload Prometheus
 
 - name: Find rule files currently deployed on the server
   ansible.builtin.find:
@@ -180,7 +194,7 @@
   loop_control:
     label: "{{ item.path | basename }}"
   when: (item.path | basename) not in prometheus_rule_basenames
-  notify: Restart Prometheus
+  notify: Reload Prometheus
 
 - name: Pull the Prometheus image
   community.docker.docker_image_pull:
@@ -200,7 +214,7 @@
     etc_hosts:
       host.docker.internal: host-gateway
     volumes:
-      - /mnt/storage/config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /mnt/storage/config/prometheus/conf:/etc/prometheus/conf:ro
       - /mnt/storage/config/prometheus/rules:/etc/prometheus/rules:ro
       - /mnt/storage/config/prometheus/data:/prometheus
     command:
@@ -209,5 +223,12 @@
       # would expose POST /-/reload and POST /-/quit to anyone on the LAN, who
       # could shut Prometheus down. Config/rule reloads use `docker kill -s HUP
       # prometheus` instead, which reloads identically with no network endpoint.
-      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--config.file=/etc/prometheus/conf/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
+
+- name: Remove the superseded single-file Prometheus config
+  # Predecessor of conf/prometheus.yml. No longer mounted anywhere, but it
+  # still looks like the live config to anyone who goes looking.
+  ansible.builtin.file:
+    path: /mnt/storage/config/prometheus/prometheus.yml
+    state: absent

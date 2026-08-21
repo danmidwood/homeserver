@@ -42,7 +42,7 @@ receivers:
 
   - name: telegram-critical
     telegram_configs:
-      - bot_token_file: /etc/alertmanager/telegram_token
+      - bot_token_file: /etc/alertmanager/conf/telegram_token
         chat_id: {{ telegram_chat_id }}
         parse_mode: HTML
         send_resolved: true
@@ -58,7 +58,7 @@ receivers:
 
   - name: telegram-warning
     telegram_configs:
-      - bot_token_file: /etc/alertmanager/telegram_token
+      - bot_token_file: /etc/alertmanager/conf/telegram_token
         chat_id: {{ telegram_chat_id }}
         parse_mode: HTML
         send_resolved: true
@@ -74,7 +74,7 @@ receivers:
 
   - name: telegram-info
     telegram_configs:
-      - bot_token_file: /etc/alertmanager/telegram_token
+      - bot_token_file: /etc/alertmanager/conf/telegram_token
         chat_id: {{ telegram_chat_id }}
         parse_mode: HTML
         send_resolved: false
