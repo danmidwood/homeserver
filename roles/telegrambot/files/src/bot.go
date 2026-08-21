@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"html"
 	"log"
 	"os"
 	"path/filepath"
@@ -25,11 +26,27 @@ type Bot struct {
 	Run           Runner
 }
 
-const helpText = `Commands:
-/status - containers, disk, backup, alerts
-/backup_now - start a backup now
-/restart &lt;service&gt; - restart one app container
-Send a file to save it to the inbox.`
+// help lists what the bot can do, including which containers /restart accepts.
+// The list is built from the configured allowlist rather than written out, so
+// it cannot drift from what sudo will actually permit.
+func (b *Bot) help() string {
+	var sb strings.Builder
+	sb.WriteString("<b>Commands</b>\n")
+	sb.WriteString("/status — containers, disk, backup age, firing alerts\n")
+	sb.WriteString("/backup_now — start a backup now\n")
+	sb.WriteString("/restart &lt;service&gt; — restart one app container\n")
+	sb.WriteString("/help — this message\n\n")
+	sb.WriteString("Send a photo or a document to save it to the inbox (20 MB limit).\n\n")
+
+	if len(b.Restartable) > 0 {
+		sb.WriteString("<b>Restartable</b>\n")
+		for _, c := range b.Restartable {
+			sb.WriteString("• " + html.EscapeString(c) + "\n")
+		}
+		sb.WriteString("\nCaddy, the databases and the monitoring stack are deliberately excluded — restart those over SSH.")
+	}
+	return sb.String()
+}
 
 // parseCommand splits "/restart kavita" into "/restart" and "kavita". Telegram
 // appends "@botname" to commands in groups, which is stripped here so the same
@@ -73,8 +90,13 @@ func (b *Bot) Handle(ctx context.Context, m *Message) string {
 		return b.backupNow(ctx)
 	case "/restart":
 		return b.restart(ctx, arg)
+	case "/help", "/start":
+		return b.help()
 	default:
-		return helpText
+		// An unrecognised command gets the same help rather than an error:
+		// there is one user, and telling them what exists is more useful than
+		// telling them what does not.
+		return b.help()
 	}
 }
 

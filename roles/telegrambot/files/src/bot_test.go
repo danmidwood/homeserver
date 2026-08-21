@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -86,5 +87,34 @@ func TestHandleUnknownCommandGivesHelp(t *testing.T) {
 	got := b.Handle(context.Background(), &Message{From: &User{ID: 42}, Text: "/nonsense"})
 	if got == "" {
 		t.Error("an unknown command produced no reply")
+	}
+}
+
+// /help must list every command the bot answers, and the containers it will
+// actually restart -- built from the allowlist so it cannot claim more or less
+// than sudo permits.
+func TestHelpListsCommandsAndRestartables(t *testing.T) {
+	b := &Bot{AllowedUserID: 42, Restartable: []string{"kavita", "plex"}}
+
+	for _, text := range []string{"/help", "/start", "/nonsense"} {
+		got := b.Handle(context.Background(), &Message{From: &User{ID: 42}, Text: text})
+		for _, want := range []string{"/status", "/backup_now", "/restart", "/help", "kavita", "plex", "inbox"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("help for %q omitted %q: %s", text, want, got)
+			}
+		}
+	}
+}
+
+// The help text is sent with HTML parse mode, so an unescaped angle bracket
+// would make Telegram drop the whole message.
+func TestHelpEscapesContainerNames(t *testing.T) {
+	b := &Bot{AllowedUserID: 42, Restartable: []string{"weird<&>name"}}
+	got := b.help()
+	if strings.Contains(got, "weird<&>name") {
+		t.Errorf("container name was not escaped: %s", got)
+	}
+	if !strings.Contains(got, "weird&lt;&amp;&gt;name") {
+		t.Errorf("container name not escaped as expected: %s", got)
 	}
 }
