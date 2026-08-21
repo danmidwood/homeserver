@@ -4,7 +4,7 @@
 
 **Goal:** A Go service that lets one Telegram user ask the server for its status, trigger a backup, restart an allow-listed app container, and drop files into an inbox.
 
-**Architecture:** A single stdlib-only Go binary run by systemd as an unprivileged `telegrambot` user. It long-polls Telegram, reads `/status` from Prometheus and Alertmanager over HTTP, and performs its two privileged actions through exact-match sudo rules — no wildcards, and the bot user is never in the `docker` group. It exposes `/metrics` so Prometheus scrapes it and the existing `TargetDown` rule covers its liveness.
+**Architecture:** A single stdlib-only Go binary run by systemd as an unprivileged `telegrambot` user. It long-polls Telegram, reads `/status` from Prometheus and Alertmanager over HTTP, and performs its two privileged actions through exact-match sudo rules — no wildcards, and the bot user is never in the `docker` group. It exposes no network listener at all; its liveness is monitored by node-exporter's systemd collector reading the unit's state.
 
 **Tech Stack:** Go 1.23 (standard library only, zero third-party dependencies), systemd, sudo, Ansible, Prometheus.
 
@@ -32,14 +32,20 @@
 | `sudo` env handling | `env_reset` is the compiled-in default and is **not** overridden; the only active `env_keep` is scoped to `visudo`. So `DOCKER_HOST` cannot pass through, and no wrapper script is needed. |
 | Docker group members | `daniel` only |
 | Existing sudoers drop-ins | none |
-| `TargetDown` rule | `up == 0` for 10m, severity warning — **generic**, so any new scrape job is covered automatically |
-| How Prometheus reaches host services | `host.docker.internal:<port>` with `instance: "xps"` (see the `node` job) |
+| node-exporter systemd collector | Available (`--collector.systemd`, with `--collector.systemd.unit-include`), currently **not** enabled |
+| Current node-exporter args | `NODE_EXPORTER_ARGS="--collector.textfile.directory=/var/lib/node_exporter/textfile_collector"` in `/etc/conf.d/prometheus-node-exporter` |
 | Phase 1 secrets already present | `telegram_bot_token`, `telegram_chat_id` in `user_passwords.yml`. For a private chat the chat id **is** the user id. |
 | Textfile collector dir | `/var/lib/node_exporter/textfile_collector`, `root:root 0755` — the bot deliberately does **not** write here |
 | Prometheus API | `http://localhost:9090`, Alertmanager `http://localhost:9093` |
 | `/mnt/storage` free | 261G |
 
-**Deviation from the spec, deliberate.** The spec calls for a heartbeat written to the node-exporter textfile collector plus a new `TelegramBotDown` rule. This plan instead exposes `/metrics` from the bot and adds a scrape job. Two reasons: writing to the textfile directory would require granting the bot write access to a directory shared with `restic_backup.prom` and `smart.prom`, letting a compromised bot forge backup and disk health metrics; and `TargetDown` is already `up == 0`, so a scrape job gets liveness coverage with no new rule. Task 6 updates the spec to match.
+**Deviation from the spec, deliberate.** The spec calls for a heartbeat written to the node-exporter textfile collector plus a new `TelegramBotDown` rule. This plan enables node-exporter's systemd collector instead and alerts on unit state.
+
+Writing to the textfile directory is rejected because that directory also holds `restic_backup.prom` and `smart.prom`; granting this service write access there would let a compromised bot forge the backup and disk-health metrics — hiding exactly the failures the alerting exists to catch.
+
+Having the bot serve `/metrics` for Prometheus to scrape was also rejected. It would mean a new listening socket on all interfaces, since Prometheus is containerised and reaches the host over the docker bridge rather than loopback, and it would make liveness depend on the service answering for itself — a wedged bot still accepting TCP would pass a scrape while being useless.
+
+Reading systemd's own view of the unit needs no port, no metrics code in the bot, and no cooperation from the thing being monitored. It also closes a gap the phase 1 spec already records: *"`backup-alert.service` has no `OnFailure=` of its own, so if the handler itself dies nothing notifies. A general fix needs node-exporter's `systemd` collector, which is not enabled."* One collector covers `telegram-bot`, `restic-backup`, `backup-alert`, `image-update-check` and `docker`. Task 6 updates the spec to match.
 
 ## File Structure
 
@@ -51,7 +57,6 @@
 | `roles/telegrambot/files/src/status.go` | Prometheus and Alertmanager queries, `/status` rendering |
 | `roles/telegrambot/files/src/actions.go` | `/backup_now` and `/restart`, via an injectable command runner |
 | `roles/telegrambot/files/src/inbox.go` | Filename sanitising, collision handling, file save |
-| `roles/telegrambot/files/src/metrics.go` | `/metrics` endpoint |
 | `roles/telegrambot/files/src/main.go` | Configuration from environment, wiring, startup |
 | `roles/telegrambot/files/src/*_test.go` | Tests, offline, no network and no real bot |
 | `roles/telegrambot/defaults/main.yml` | `telegrambot_restartable` — the nine allowed containers |
@@ -61,7 +66,9 @@
 | `roles/telegrambot/tasks/main.yml` | User, directories, source, build, sudoers, unit |
 | `roles/telegrambot/handlers/main.yml` | Restart handler |
 | `tests/run-go-tests.sh` | Runs `go test ./...` for the bot |
-| `roles/prometheus/templates/prometheus.yml.j2` | One added scrape job |
+| `roles/prometheus/tasks/main.yml` | Enable the systemd collector on node-exporter |
+| `roles/prometheus/files/rules/systemd.yml` | `SystemdUnitFailed` rule |
+| `tests/rules/systemd_test.yml` | Its promtool unit test |
 | `roles/backup/defaults/main.yml` | Inbox added to `backup_paths` |
 | `playbooks/xps.yml` | One added role line |
 
@@ -450,7 +457,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -571,7 +577,6 @@ func (b *Bot) Poll(ctx context.Context) {
 			// Back off rather than hammering an unreachable Telegram or
 			// crash-looping under systemd's Restart=always.
 			log.Printf("getUpdates: %v (retrying in %s)", err, backoff)
-			metricErrors.Add(1)
 			select {
 			case <-ctx.Done():
 				return
@@ -583,16 +588,13 @@ func (b *Bot) Poll(ctx context.Context) {
 			continue
 		}
 		backoff = time.Second
-		metricPolls.Add(1)
 
 		for _, u := range updates {
 			if u.Message != nil {
 				if b.authorized(u.Message) {
-					metricCommands.Add(1)
 					if reply := b.Handle(ctx, u.Message); reply != "" {
 						if err := b.TG.SendMessage(ctx, u.Message.Chat.ID, reply); err != nil {
 							log.Printf("sendMessage: %v", err)
-							metricErrors.Add(1)
 						}
 					}
 				} else {
@@ -602,8 +604,9 @@ func (b *Bot) Poll(ctx context.Context) {
 					if u.Message.From != nil {
 						id = u.Message.From.ID
 					}
+					// journald is the record here; there is no metric, and no
+					// reply, because a reply confirms the bot exists.
 					log.Printf("ignoring message from unauthorised user id %d", id)
-					metricRejected.Add(1)
 				}
 			}
 			// Advanced only after handling, so a crash replays at most the
@@ -616,11 +619,6 @@ func (b *Bot) Poll(ctx context.Context) {
 	}
 }
 
-func execRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return execCommandContext(ctx, name, args...)
-}
-
-var _ = fmt.Sprintf
 ```
 
 - [ ] **Step 6: Write the test harness**
@@ -658,36 +656,23 @@ Make it executable with `chmod +x tests/run-go-tests.sh`.
 
 - [ ] **Step 7: Make it compile**
 
-`bot.go` above references `metricPolls`, `metricErrors`, `metricCommands`, `metricRejected`, `execCommandContext`, `b.status`, `b.backupNow`, `b.restart` and `b.saveIncomingFile`, which arrive in Tasks 2 to 5. To keep this task independently testable, add a temporary file `roles/telegrambot/files/src/stubs.go` containing exactly:
+`bot.go` above references `b.status`, `b.backupNow`, `b.restart` and `b.saveIncomingFile`, which arrive in Tasks 2 to 4. To keep this task independently testable, add a temporary file `roles/telegrambot/files/src/stubs.go` containing exactly:
 
 ```go
 package main
 
-import (
-	"context"
-	"expvar"
-	"os/exec"
-)
+import "context"
 
 // Replaced in later tasks. Present so Task 1 compiles and its tests run.
-var (
-	metricPolls    = expvar.NewInt("polls")
-	metricErrors   = expvar.NewInt("errors")
-	metricCommands = expvar.NewInt("commands")
-	metricRejected = expvar.NewInt("rejected")
-)
 
-func execCommandContext(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).CombinedOutput()
-}
-
-func (b *Bot) status(ctx context.Context) string          { return "not implemented" }
-func (b *Bot) backupNow(ctx context.Context) string       { return "not implemented" }
+func (b *Bot) status(ctx context.Context) string            { return "not implemented" }
+func (b *Bot) backupNow(ctx context.Context) string         { return "not implemented" }
 func (b *Bot) restart(ctx context.Context, n string) string { return "not implemented" }
+
 func (b *Bot) saveIncomingFile(ctx context.Context, m *Message) string { return "not implemented" }
 ```
 
-Task 2 replaces `status`, Task 3 replaces `backupNow` and `restart`, Task 4 replaces `saveIncomingFile`, and Task 5 replaces the metric variables — each deleting the corresponding stub. **`stubs.go` must not exist by the end of Task 5.** Task 5 has an explicit step to verify that.
+Task 2 replaces `status`, Task 3 replaces `backupNow` and `restart`, and Task 4 replaces `saveIncomingFile`, each deleting the corresponding stub. **`stubs.go` must not exist by the end of Task 4.** Task 4 has an explicit step to verify that.
 
 - [ ] **Step 8: Run tests to verify they pass**
 
@@ -1440,16 +1425,20 @@ func (b *Bot) saveIncomingFile(ctx context.Context, m *Message) string {
 		return "❌ could not save: " + html.EscapeString(err.Error())
 	}
 
-	metricFiles.Add(1)
 	return fmt.Sprintf("📎 saved as %s", html.EscapeString(filepath.Base(dest)))
 }
 ```
 
-Add `metricFiles = expvar.NewInt("files")` to the metric block in `stubs.go` for now; Task 5 moves it to `metrics.go`.
+- [ ] **Step 4: Delete stubs.go entirely and verify it is gone**
 
-- [ ] **Step 4: Delete the saveIncomingFile stub**
+`saveIncomingFile` was the last stub, so the file goes rather than being emptied:
 
-Remove that line from `stubs.go`.
+```bash
+rm roles/telegrambot/files/src/stubs.go
+test ! -f roles/telegrambot/files/src/stubs.go && echo "stubs.go removed"
+```
+
+If anything then fails to compile, a stub was still in use — implement it rather than restoring the file.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
@@ -1480,11 +1469,10 @@ complete, and collisions are suffixed rather than overwriting."
 
 ---
 
-### Task 5: Metrics, main, and the Ansible role
+### Task 5: main, and the Ansible role
 
 **Files:**
-- Create: `roles/telegrambot/files/src/metrics.go`, `main.go`
-- Delete: `roles/telegrambot/files/src/stubs.go`
+- Create: `roles/telegrambot/files/src/main.go`
 - Create: `roles/telegrambot/defaults/main.yml`, `tasks/main.yml`, `handlers/main.yml`, `templates/sudoers.j2`, `templates/env.j2`, `files/telegram-bot.service`
 - Modify: `playbooks/xps.yml` (insert exactly one line)
 
@@ -1492,51 +1480,7 @@ complete, and collisions are suffixed rather than overwriting."
 - Consumes: everything from Tasks 1 to 4.
 - Produces: a deployed, running service.
 
-- [ ] **Step 1: Write metrics.go**
-
-```go
-package main
-
-import (
-	"expvar"
-	"fmt"
-	"net/http"
-)
-
-// Counters are exported in Prometheus text format rather than expvar's JSON.
-// Their real purpose is liveness: once Prometheus scrapes this endpoint, the
-// existing TargetDown rule (up == 0 for 10m) covers the bot with no new rule.
-//
-// Nothing is written to the node-exporter textfile collector, deliberately.
-// That directory also holds restic_backup.prom and smart.prom, and giving this
-// service write access there would let a compromised bot forge backup and disk
-// health metrics -- hiding exactly the failures the alerting exists to catch.
-var (
-	metricPolls    = expvar.NewInt("telegram_bot_polls_total")
-	metricCommands = expvar.NewInt("telegram_bot_commands_total")
-	metricRejected = expvar.NewInt("telegram_bot_rejected_total")
-	metricErrors   = expvar.NewInt("telegram_bot_errors_total")
-	metricFiles    = expvar.NewInt("telegram_bot_files_total")
-)
-
-func metricsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-	for _, m := range []struct {
-		name, help string
-		v          *expvar.Int
-	}{
-		{"telegram_bot_polls_total", "Successful getUpdates calls.", metricPolls},
-		{"telegram_bot_commands_total", "Authorised commands handled.", metricCommands},
-		{"telegram_bot_rejected_total", "Messages ignored because the sender is not the allowed user.", metricRejected},
-		{"telegram_bot_errors_total", "Telegram API errors.", metricErrors},
-		{"telegram_bot_files_total", "Files saved to the inbox.", metricFiles},
-	} {
-		fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s counter\n%s %d\n", m.name, m.help, m.name, m.name, m.v.Value())
-	}
-}
-```
-
-- [ ] **Step 2: Write main.go**
+- [ ] **Step 1: Write main.go**
 
 ```go
 package main
@@ -1544,14 +1488,12 @@ package main
 import (
 	"context"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 )
 
 func mustEnv(key string) string {
@@ -1592,43 +1534,19 @@ func main() {
 		},
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/metrics", metricsHandler)
-	srv := &http.Server{
-		// Bound to all interfaces because Prometheus runs in a container and
-		// reaches host services via host.docker.internal, which is the docker
-		// bridge gateway rather than loopback. Only /metrics is served, and it
-		// carries counters, no secrets.
-		Addr:              mustEnv("TELEGRAM_METRICS_ADDR"),
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("metrics server: %v", err)
-		}
-	}()
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("telegram bot started, serving metrics on %s", srv.Addr)
+	// The bot listens on nothing. Its liveness is reported by node-exporter's
+	// systemd collector reading this unit's state, which needs no port and no
+	// cooperation from the process being watched.
+	log.Printf("telegram bot started")
 	b.Poll(ctx)
 	log.Printf("shutting down")
 }
 ```
 
-- [ ] **Step 3: Delete stubs.go and verify it is gone**
-
-```bash
-rm roles/telegrambot/files/src/stubs.go
-test ! -f roles/telegrambot/files/src/stubs.go && echo "stubs.go removed"
-./tests/run-go-tests.sh
-```
-
-Expected: the file is gone, `go vet` is clean, and all tests still pass. If anything fails to compile, a stub was still in use — implement it rather than restoring the file.
-
-- [ ] **Step 4: Write the role defaults**
+- [ ] **Step 2: Write the role defaults**
 
 `roles/telegrambot/defaults/main.yml`:
 
@@ -1659,11 +1577,10 @@ telegrambot_restartable:
   - portainer
   - vaultwarden
 
-telegrambot_metrics_addr: "0.0.0.0:9099"
 telegrambot_inbox_dir: /mnt/storage/telegram-inbox
 ```
 
-- [ ] **Step 5: Write the sudoers template**
+- [ ] **Step 3: Write the sudoers template**
 
 `roles/telegrambot/templates/sudoers.j2`:
 
@@ -1681,7 +1598,7 @@ telegrambot ALL=(root) NOPASSWD: /usr/bin/docker restart {{ name }}
 {% endfor %}
 ```
 
-- [ ] **Step 6: Write the env template**
+- [ ] **Step 4: Write the env template**
 
 `roles/telegrambot/templates/env.j2`:
 
@@ -1691,12 +1608,11 @@ TELEGRAM_ALLOWED_USER_ID={{ telegram_chat_id }}
 TELEGRAM_RESTARTABLE={{ telegrambot_restartable | join(',') }}
 TELEGRAM_INBOX_DIR={{ telegrambot_inbox_dir }}
 TELEGRAM_STATE_FILE=/var/lib/telegram-bot/offset
-TELEGRAM_METRICS_ADDR={{ telegrambot_metrics_addr }}
 PROMETHEUS_URL=http://localhost:9090
 ALERTMANAGER_URL=http://localhost:9093
 ```
 
-- [ ] **Step 7: Write the systemd unit**
+- [ ] **Step 5: Write the systemd unit**
 
 `roles/telegrambot/files/telegram-bot.service`:
 
@@ -1728,7 +1644,7 @@ ReadWritePaths=/mnt/storage/telegram-inbox /var/lib/telegram-bot
 WantedBy=multi-user.target
 ```
 
-- [ ] **Step 8: Write the handler**
+- [ ] **Step 6: Write the handler**
 
 `roles/telegrambot/handlers/main.yml`:
 
@@ -1740,7 +1656,7 @@ WantedBy=multi-user.target
     daemon_reload: true
 ```
 
-- [ ] **Step 9: Write the role tasks**
+- [ ] **Step 7: Write the role tasks**
 
 `roles/telegrambot/tasks/main.yml`:
 
@@ -1862,11 +1778,11 @@ WantedBy=multi-user.target
     daemon_reload: true
 ```
 
-- [ ] **Step 10: Add the role to the playbook**
+- [ ] **Step 8: Add the role to the playbook**
 
 Open `playbooks/xps.yml`. Count the lines matching `^    - ` and write the number down. Insert **exactly one line**, `    - telegrambot`, immediately after the `    - imagewatch` line. Count again and confirm the total rose by exactly one and no other role name changed.
 
-- [ ] **Step 11: Deploy**
+- [ ] **Step 9: Deploy**
 
 ```bash
 ansible-playbook -i inventory/hosts.ini playbooks/xps.yml
@@ -1876,11 +1792,16 @@ Then verify:
 
 ```bash
 ssh daniel@xps.fritz.box 'systemctl is-active telegram-bot; journalctl -u telegram-bot -n 20 --no-pager -o cat'
-ssh daniel@xps.fritz.box 'curl -s http://localhost:9099/metrics'
 ssh daniel@xps.fritz.box 'sudo -l -U telegrambot'
 ```
 
-Expected: the unit is `active`, the log shows it started and is serving metrics, `/metrics` returns the five counters, and `sudo -l -U telegrambot` lists exactly ten permitted commands with no wildcards.
+Expected: the unit is `active`, the log shows `telegram bot started`, and `sudo -l -U telegrambot` lists exactly ten permitted commands with no wildcards.
+
+Confirm the bot opens no listening socket:
+
+```bash
+ssh daniel@xps.fritz.box 'sudo ss -lntp | grep telegram-bot || echo "no listening socket, as intended"'
+```
 
 Confirm the bot user has no Docker access:
 
@@ -1890,11 +1811,11 @@ ssh daniel@xps.fritz.box 'getent group docker'
 
 Expected: `telegrambot` is **not** a member.
 
-- [ ] **Step 12: Verify idempotency**
+- [ ] **Step 10: Verify idempotency**
 
 Run the playbook again. Expected: `changed=0` and no handler fires. If the build task reports changed on a second run, the `when:` guard is wrong — fix it before committing.
 
-- [ ] **Step 13: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add roles/telegrambot playbooks/xps.yml
@@ -1913,9 +1834,10 @@ one needed to fix it.
 NoNewPrivileges is deliberately not set on the unit: it blocks setuid binaries
 including sudo, and the resulting failure reads like a permissions bug.
 
-Metrics are served over HTTP rather than written to the node-exporter textfile
-collector. That directory also holds the backup and SMART metrics, and write
-access there would let a compromised bot forge them."
+The bot opens no listening socket and writes no metrics. Its liveness comes from
+systemd's own view of the unit, added in the next commit -- that needs no port
+and no cooperation from the process being watched, and a wedged bot still
+accepting connections would pass a scrape while being useless."
 ```
 
 ---
@@ -1927,22 +1849,177 @@ access there would let a compromised bot forge them."
 - Modify: `roles/backup/defaults/main.yml`
 - Modify: `docs/superpowers/specs/2026-08-21-telegram-bot-design.md`
 
-- [ ] **Step 1: Add the scrape job**
+- [ ] **Step 1: Enable node-exporter's systemd collector**
 
-In `roles/prometheus/templates/prometheus.yml.j2`, after the `node` job, add:
+In `roles/prometheus/tasks/main.yml`, replace the contents written by the task
+named `Enable the node-exporter textfile collector` so the args line reads:
 
 ```yaml
-  # The bot exposes counters, but the reason this job exists is liveness: with
-  # it, the generic TargetDown rule (up == 0 for 10m) covers the bot, and no
-  # bot-specific alert rule is needed.
-  - job_name: "telegrambot"
-    static_configs:
-      - targets: ["host.docker.internal:9099"]
-        labels:
-          instance: "xps"
+- name: Enable the node-exporter textfile and systemd collectors
+  ansible.builtin.copy:
+    content: |
+      # The systemd collector reports each unit's state, which is how
+      # oneshot units and background services on this host are monitored.
+      # Nothing has to expose a port or cooperate: a service that is wedged
+      # but still accepting connections would pass an HTTP scrape while
+      # failing this check.
+      #
+      # unit-include is deliberately narrow. Without it the collector exports
+      # a series per unit on the host, which is hundreds of series carrying no
+      # information anyone will ever alert on.
+      NODE_EXPORTER_ARGS="--collector.textfile.directory=/var/lib/node_exporter/textfile_collector --collector.systemd --collector.systemd.unit-include=(telegram-bot|restic-backup|backup-alert|image-update-check|docker)\\.(service|timer)"
+    dest: /etc/conf.d/prometheus-node-exporter
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart node-exporter
 ```
 
-- [ ] **Step 2: Add the inbox to the backup paths**
+- [ ] **Step 2: Verify the metric exists before writing a rule against it**
+
+Deploy the prometheus role, then confirm the metric name and label values are
+what the rule will assume. Do not skip this: a rule written against a guessed
+metric name fires never and looks healthy.
+
+```bash
+ansible-playbook -i inventory/hosts.ini playbooks/xps.yml
+ssh daniel@xps.fritz.box 'curl -s http://localhost:9100/metrics | grep "^node_systemd_unit_state" | head -20'
+```
+
+Expected: `node_systemd_unit_state{name="telegram-bot.service",state="active"} 1`
+and siblings for the other states and units. Record the exact output in your
+report. If the metric is absent or named differently, stop and correct the rule
+in the next step to match reality.
+
+- [ ] **Step 3: Write the failing rule test**
+
+Create `tests/rules/systemd_test.yml`:
+
+```yaml
+rule_files:
+  - ../../roles/prometheus/files/rules/systemd.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A unit that is active stays silent.
+  - interval: 1m
+    input_series:
+      - series: 'node_systemd_unit_state{instance="xps",job="node",name="telegram-bot.service",state="active"}'
+        values: '1+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: SystemdUnitFailed
+        exp_alerts: []
+
+  # A unit that stops being active fires after the for: elapses.
+  - interval: 1m
+    input_series:
+      - series: 'node_systemd_unit_state{instance="xps",job="node",name="telegram-bot.service",state="active"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SystemdUnitFailed
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: SystemdUnitFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: xps
+              job: node
+              name: telegram-bot.service
+              state: active
+            exp_annotations:
+              summary: "telegram-bot.service is not running"
+              description: "The systemd unit telegram-bot.service has not been in the active state for over 15 minutes. Run `systemctl status telegram-bot.service` and `journalctl -u telegram-bot.service` on the host."
+
+  # A oneshot unit is inactive between runs, which is normal and must not fire.
+  # This is why the rule matches on failed rather than on not-active for timers
+  # and oneshots.
+  - interval: 1m
+    input_series:
+      - series: 'node_systemd_unit_state{instance="xps",job="node",name="restic-backup.service",state="active"}'
+        values: '0+0x40'
+      - series: 'node_systemd_unit_state{instance="xps",job="node",name="restic-backup.service",state="failed"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: SystemdUnitFailed
+        exp_alerts: []
+
+  # A oneshot unit that actually failed does fire.
+  - interval: 1m
+    input_series:
+      - series: 'node_systemd_unit_state{instance="xps",job="node",name="image-update-check.service",state="failed"}'
+        values: '1+0x40'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SystemdUnitInFailedState
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: xps
+              job: node
+              name: image-update-check.service
+              state: failed
+            exp_annotations:
+              summary: "image-update-check.service is in the failed state"
+              description: "The systemd unit image-update-check.service has been in the failed state for over 15 minutes. Run `systemctl status image-update-check.service` and `journalctl -u image-update-check.service` on the host."
+```
+
+- [ ] **Step 4: Run to verify it fails**
+
+Run: `./tests/run-promtool.sh`
+Expected: FAIL — `roles/prometheus/files/rules/systemd.yml` does not exist.
+
+- [ ] **Step 5: Write the rule**
+
+Create `roles/prometheus/files/rules/systemd.yml`:
+
+```yaml
+groups:
+  - name: systemd
+    rules:
+      # Two rules rather than one, because "not running" means opposite things
+      # for the two kinds of unit here.
+      #
+      # telegram-bot.service is long-running: not being active IS the fault.
+      # restic-backup.service and image-update-check.service are oneshot units
+      # triggered by timers, and spend almost all their time inactive, which is
+      # entirely healthy. Alerting on not-active would fire constantly for them.
+      - alert: SystemdUnitFailed
+        expr: node_systemd_unit_state{name="telegram-bot.service",state="active"} == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} is not running"
+          description: "The systemd unit {{ $labels.name }} has not been in the active state for over 15 minutes. Run `systemctl status {{ $labels.name }}` and `journalctl -u {{ $labels.name }}` on the host."
+
+      # Covers every watched unit, oneshot included. This is what closes the
+      # recorded gap that a failing backup-alert.service notified nobody.
+      - alert: SystemdUnitInFailedState
+        expr: node_systemd_unit_state{state="failed"} == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} is in the failed state"
+          description: "The systemd unit {{ $labels.name }} has been in the failed state for over 15 minutes. Run `systemctl status {{ $labels.name }}` and `journalctl -u {{ $labels.name }}` on the host."
+```
+
+- [ ] **Step 6: Run to verify it passes**
+
+Run: `./tests/run-promtool.sh`
+Expected: PASS, and the rule count for `systemd.yml` reported as 2.
+
+- [ ] **Step 7: Mutation-verify**
+
+Change `== 0` to `== 1` in `SystemdUnitFailed`, run `./tests/run-promtool.sh`, and
+confirm the test FAILS. Restore and confirm it passes. Record both outcomes.
+
+- [ ] **Step 8: Add the inbox to the backup paths**
 
 In `roles/backup/defaults/main.yml`, add to `backup_paths`:
 
@@ -1955,16 +2032,29 @@ deduplicates by content, so once a file is moved to an already-backed-up path
 both snapshots reference the same chunks — and it covers the window between
 arriving and being filed.
 
-- [ ] **Step 3: Deploy and confirm the target is up**
+- [ ] **Step 9: Deploy and confirm the rule sees the unit**
 
 ```bash
 ansible-playbook -i inventory/hosts.ini playbooks/xps.yml
-ssh daniel@xps.fritz.box 'curl -s http://localhost:9090/api/v1/targets | jq -r ".data.activeTargets[] | select(.labels.job==\"telegrambot\") | .health"'
+ssh daniel@xps.fritz.box 'curl -s --get http://localhost:9090/api/v1/query --data-urlencode "query=node_systemd_unit_state{name=\"telegram-bot.service\",state=\"active\"}" | jq -r ".data.result[0].value[1]"'
 ```
 
-Expected: `up`.
+Expected: `1`.
 
-- [ ] **Step 4: Verify the bot end to end from Telegram**
+Then prove the alert would actually fire, rather than trusting the unit test
+alone:
+
+```bash
+ssh daniel@xps.fritz.box 'sudo systemctl stop telegram-bot && sleep 90'
+ssh daniel@xps.fritz.box 'curl -s --get http://localhost:9090/api/v1/query --data-urlencode "query=node_systemd_unit_state{name=\"telegram-bot.service\",state=\"active\"}" | jq -r ".data.result[0].value[1]"'
+ssh daniel@xps.fritz.box 'sudo systemctl start telegram-bot'
+```
+
+Expected: `0` while stopped, back to `1` after starting. The alert has a 15
+minute `for:`, so it will not fire during this check — the point is confirming
+the metric tracks reality, which is what the rule depends on.
+
+- [ ] **Step 10: Verify the bot end to end from Telegram**
 
 Send each of these from the phone and record the exact replies:
 
@@ -1984,7 +2074,7 @@ Send each of these from the phone and record the exact replies:
 Step 3 is the one that matters most: it proves the allowlist is enforced against
 a real message, not just in a unit test.
 
-- [ ] **Step 5: Verify the offset survives a restart**
+- [ ] **Step 11: Verify the offset survives a restart**
 
 ```bash
 ssh daniel@xps.fritz.box 'sudo cat /var/lib/telegram-bot/offset'
@@ -1996,30 +2086,51 @@ Expected: the offset file holds a number, and after the restart kavita's uptime
 is **unchanged** — proving the earlier `/restart kavita` was not replayed. This
 is the check that the most dangerous failure mode is actually closed.
 
-- [ ] **Step 6: Update the spec**
+- [ ] **Step 12: Update the spec**
 
 In `docs/superpowers/specs/2026-08-21-telegram-bot-design.md`:
 
 1. Replace the heartbeat-and-`TelegramBotDown` description in "Failure modes"
-   with what was built: a `/metrics` endpoint scraped by Prometheus, covered by
-   the existing generic `TargetDown` rule. State the reason for the change —
-   writing to the node-exporter textfile directory would let a compromised bot
-   forge the backup and SMART metrics stored alongside, and `TargetDown` is
-   already `up == 0` so no new rule is needed.
-2. Note in the deliverables that no new alert rule was added, for the same reason.
+   with what was built: node-exporter's systemd collector, and the
+   `SystemdUnitFailed` and `SystemdUnitInFailedState` rules. Give both reasons
+   the textfile heartbeat was rejected — that directory also holds
+   `restic_backup.prom` and `smart.prom`, so write access there would let a
+   compromised bot forge the backup and disk metrics — and why a scrape
+   endpoint was rejected too: it would need a listening socket on all
+   interfaces, and a wedged bot still accepting connections would pass a scrape
+   while being useless.
+2. Note that the same collector closes the phase 1 gap recorded against
+   `backup-alert.service` having no `OnFailure=` of its own, and now also covers
+   `restic-backup.service` and `image-update-check.service`.
+3. Update the deliverables list: `roles/prometheus` gains the systemd collector
+   flags and `systemd.yml`, and the bot itself exposes no network listener.
 
-- [ ] **Step 7: Commit**
+Also update the phase 1 spec, `docs/superpowers/specs/2026-08-19-observability-alerting-design.md`:
+remove the known gap saying a failed unit notifies nobody, since it is now
+false, and note in its place that the systemd collector is enabled with a
+narrow `unit-include`.
+
+- [ ] **Step 13: Commit**
 
 ```bash
 git add roles/prometheus roles/backup docs/superpowers/specs/2026-08-21-telegram-bot-design.md
-git commit -m "Scrape the bot, back up the inbox, and record the metrics change
+git commit -m "Watch systemd unit state, and back up the telegram inbox
 
-Prometheus now scrapes the bot, which means the generic TargetDown rule covers
-its liveness with no bot-specific rule. The spec called for a heartbeat written
-to the node-exporter textfile collector; that directory also holds the backup
-and SMART metrics, and granting write access there would let a compromised bot
-forge exactly the signals the alerting exists to provide. The spec is updated to
-match what was built.
+node-exporter's systemd collector is enabled with a narrow unit-include, and two
+rules alert on it: one for the bot not being active, one for any watched unit in
+the failed state.
+
+The spec called for a heartbeat written to the textfile collector. That
+directory also holds the backup and SMART metrics, so granting write access
+would let a compromised bot forge exactly the signals the alerting exists to
+provide. Having the bot serve /metrics was rejected too: it needs a listening
+socket on all interfaces, and a service that is wedged but still accepting
+connections passes a scrape while being useless. systemd already knows whether
+the unit is running.
+
+This also closes a gap recorded in the phase 1 design, that a failing
+backup-alert.service notified nobody, and extends the same coverage to
+restic-backup.service and image-update-check.service.
 
 The telegram inbox joins backup_paths: restic deduplicates by content, so once a
 file is moved to an already-backed-up path both snapshots share its chunks, and
@@ -2030,12 +2141,12 @@ this covers the window before it is filed."
 
 ## Self-Review
 
-**Spec coverage.** Privilege model → Task 5 (sudoers template, user creation, unit). `/restart` allowlist → Tasks 3 and 5, verified live in Task 6 Step 4.3. `/status` from Prometheus and Alertmanager → Task 2. `/backup_now` with `--no-block` → Task 3. File inbox with 20MB cap and hostile-filename handling → Task 4. Inbox in `backup_paths` → Task 6. Offset persistence → Task 1, verified live in Task 6 Step 5. HTML escaping → Tasks 2, 3 and 4, tested in Task 2. Unauthorised senders ignored silently → Task 1 (`Poll` logs and does not reply).
+**Spec coverage.** Privilege model → Task 5 (sudoers template, user creation, unit). `/restart` allowlist → Tasks 3 and 5, verified live in Task 6 Step 4.3. `/status` from Prometheus and Alertmanager → Task 2. `/backup_now` with `--no-block` → Task 3. File inbox with 20MB cap and hostile-filename handling → Task 4. Inbox in `backup_paths` → Task 6. Offset persistence → Task 1, verified live in Task 6 Step 11. Liveness monitoring → Task 6 Steps 1 to 7. HTML escaping → Tasks 2, 3 and 4, tested in Task 2. Unauthorised senders ignored silently → Task 1 (`Poll` logs and does not reply).
 
-**Recorded deviation.** The spec's heartbeat-plus-`TelegramBotDown` is replaced by a `/metrics` endpoint and a scrape job, for the reasons given at the top of this plan. Task 6 Step 6 updates the spec rather than leaving the two disagreeing.
+**Recorded deviation.** The spec's heartbeat-plus-`TelegramBotDown` is replaced by node-exporter's systemd collector and two rules, for the reasons given at the top of this plan. Task 6 Step 12 updates both specs rather than leaving them disagreeing.
 
 **Placeholder scan.** No TBDs. Every value — the image of the toolchain, the sudo behaviour, the scrape addressing convention, the secret names already in `user_passwords.yml` — was verified on the host before this plan was written and is listed under "Facts Already Verified".
 
-**Type consistency.** `Bot`, `Client`, `Runner`, `Message`, `Update`, `User`, `Document`, `PhotoSize` are declared once in Task 1 and used unchanged afterwards. `metricPolls`, `metricCommands`, `metricRejected`, `metricErrors` and `metricFiles` are stubbed in Task 1, extended in Task 4, and defined for real in Task 5, which deletes the stub file — Task 5 Step 3 verifies `stubs.go` is gone. The env var names in `main.go` (Task 5 Step 2) match `env.j2` (Task 5 Step 6) exactly: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`, `TELEGRAM_RESTARTABLE`, `TELEGRAM_INBOX_DIR`, `TELEGRAM_STATE_FILE`, `TELEGRAM_METRICS_ADDR`, `PROMETHEUS_URL`, `ALERTMANAGER_URL`.
+**Type consistency.** `Bot`, `Client`, `Runner`, `Message`, `Update`, `User`, `Document`, `PhotoSize` are declared once in Task 1 and used unchanged afterwards. `stubs.go` holds four stubs, replaced one per task, and Task 4 deletes the file — Task 4 Step 4 verifies it is gone, and Task 5 would not compile if it were not. The env var names in `main.go` (Task 5 Step 1) match `env.j2` (Task 5 Step 4) exactly: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`, `TELEGRAM_RESTARTABLE`, `TELEGRAM_INBOX_DIR`, `TELEGRAM_STATE_FILE`, `PROMETHEUS_URL`, `ALERTMANAGER_URL`. The bot has no metrics code and opens no socket.
 
 **One consistency risk called out.** The sudoers template grants `/usr/bin/systemctl start --no-block restic-backup.service` and `actions.go` invokes exactly `sudo -n /usr/bin/systemctl start --no-block restic-backup.service`. These two must match token for token or sudo refuses. Task 5 Step 11 verifies the real grants with `sudo -l -U telegrambot`, and Task 6 Step 4.4 exercises the path for real.
