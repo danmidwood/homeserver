@@ -1842,7 +1842,7 @@ accepting connections would pass a scrape while being useless."
 
 ---
 
-### Task 6: Scrape job, backup path, and live verification
+### Task 6: Systemd unit monitoring, backup path, and live verification
 
 **Files:**
 - Modify: `roles/prometheus/templates/prometheus.yml.j2`
