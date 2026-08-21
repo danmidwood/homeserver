@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily check for newer container image tags
+
+[Timer]
+OnCalendar=*-*-* 07:00:00
+# Spread the run so it never lands on the same minute as anything else, and so
+# a reboot does not fire every timer at once.
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

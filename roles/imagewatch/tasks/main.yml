@@ -1,0 +1,46 @@
+- name: Ensure curl and jq are installed
+  # The check script builds its Alertmanager payload with jq and talks to the
+  # registries with curl. Also declared by other roles that need them; pacman
+  # makes installing from several roles idempotent, and a role-limited run must
+  # not leave this script failing on `command not found`.
+  ansible.builtin.package:
+    name:
+      - curl
+      - jq
+    state: present
+
+- name: Install the image update check script
+  ansible.builtin.copy:
+    src: image-update-check.sh
+    dest: /usr/local/bin/image-update-check.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the image update check unit
+  ansible.builtin.copy:
+    src: image-update-check.service
+    dest: /etc/systemd/system/image-update-check.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for image update check
+
+- name: Install the image update check timer
+  ansible.builtin.copy:
+    src: image-update-check.timer
+    dest: /etc/systemd/system/image-update-check.timer
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for image update check
+
+- name: Flush handlers so systemd sees the units before the timer is enabled
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the image update check timer
+  ansible.builtin.systemd:
+    name: image-update-check.timer
+    enabled: true
+    state: started
+    daemon_reload: true

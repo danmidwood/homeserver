@@ -1,0 +1,13 @@
+[Unit]
+Description=Check container images for newer version tags
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/image-update-check.sh
+# systemd leaves the start timeout at infinity for Type=oneshot, so a run
+# wedged on an unresponsive registry would hang forever and the next day's
+# trigger would be skipped because the unit is still active. A full run is
+# about seventeen HTTP requests, so ten minutes is generous.
+TimeoutStartSec=10m

@@ -15,7 +15,7 @@
     - caddy
     - cadvisor
     - blackbox
-    - diun
+    - imagewatch
     - plex
     - alertmanager
     - prometheus
