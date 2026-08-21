@@ -1,0 +1,9 @@
+- name: Restart Diun
+  # Restart rather than reload: Diun has no reload mechanism, and it is a
+  # background poller with no connections to preserve and no scrape gap to
+  # cause. Its state lives in the bolt database on a separate mount, so a
+  # restart does not lose the record of which tags it has already seen.
+  community.docker.docker_container:
+    name: diun
+    state: started
+    restart: true

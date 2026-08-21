@@ -1,0 +1,66 @@
+- name: Create the Diun state directory
+  # Holds diun.db, the record of which tags have already been reported. Kept
+  # out of the config directory so it is not exposed under a second path, and
+  # so that losing config never means re-announcing every tag.
+  ansible.builtin.file:
+    path: /mnt/storage/config/diun/data
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create the bind-mounted Diun conf directory
+  # The DIRECTORY is bind-mounted, not the files inside it. A single-file bind
+  # mount pins Docker to one inode that Ansible's atomic rename orphans,
+  # leaving the container reading a file the host no longer has.
+  ansible.builtin.file:
+    path: /mnt/storage/config/diun/conf
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Write the Diun configuration
+  ansible.builtin.copy:
+    src: diun.yml
+    dest: /mnt/storage/config/diun/conf/diun.yml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Diun
+
+- name: Install the Alertmanager notification script
+  ansible.builtin.copy:
+    src: diun-notify.sh
+    dest: /mnt/storage/config/diun/conf/notify.sh
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart Diun
+
+- name: Pull the Diun image
+  community.docker.docker_image_pull:
+    name: "crazymax/diun:4.33.0@sha256:e324b793eb32dfb7f74d3a39421ebf090141caaadee69b8f78da63112408ee25"
+    pull: not_present
+
+- name: Run Diun container
+  community.docker.docker_container:
+    name: diun
+    image: "crazymax/diun:4.33.0@sha256:e324b793eb32dfb7f74d3a39421ebf090141caaadee69b8f78da63112408ee25"
+    state: started
+    restart_policy: always
+    networks:
+      # Needed to reach alertmanager:9093 by name.
+      - name: caddy_network
+    volumes:
+      - /mnt/storage/config/diun/conf:/etc/diun:ro
+      - /mnt/storage/config/diun/data:/data
+      # Read-only: Diun only enumerates containers and reads their labels. It
+      # never needs to create, stop or modify anything.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    env:
+      TZ: "Europe/London"
+    command:
+      - "serve"
+      - "--config"
+      - "/etc/diun/diun.yml"
