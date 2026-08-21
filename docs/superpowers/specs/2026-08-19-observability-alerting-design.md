@@ -459,6 +459,16 @@ the container is running and healthy while the application inside it is
 wedged, or Caddy has lost its upstream, or a certificate has quietly stopped
 renewing.
 
+**Verified by fault injection.** Pointing Caddy at a dead upstream port for
+`kavita` while the container kept running fired `EndpointDown` for
+`https://books.home.danmidwood.com` within its 5-minute window, and
+`ContainerMissing` stayed silent throughout — cAdvisor still saw a healthy,
+running container, because from the container's point of view nothing was
+wrong. Whether `ContainerMissing` accompanies `EndpointDown` is therefore
+itself a diagnostic signal: both firing together means the container died;
+`EndpointDown` alone means the container is fine and something in front of
+or inside it is broken.
+
 ### Meta
 
 | Alert | Condition | Severity |
@@ -633,7 +643,7 @@ Six increments, each independently useful and independently revertable.
 | 2 | Backup integrity: textfile collector, staleness rules, `OnFailure=` handler | none — delivered 2026-08-20 |
 | 3 | Disk health: smartmontools, textfile script and timer, SMART rules | none — delivered 2026-08-20 |
 | 4 | Container health: cAdvisor and rules | cAdvisor — delivered 2026-08-20 |
-| 5 | Reachability and TLS: blackbox exporter and rules | blackbox |
+| 5 | Reachability and TLS: blackbox exporter and rules | blackbox — delivered 2026-08-21 |
 | 6 | Diun image-update notifications | Diun |
 
 Increment 1 proves the entire Telegram path end to end, so every increment
