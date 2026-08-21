@@ -100,7 +100,7 @@ complicated step from the migration.
 ### All notifications route through Alertmanager
 
 Two event sources bypass Prometheus and inject alerts directly into
-Alertmanager's API: the backup unit's `OnFailure=` handler, and Diun's
+Alertmanager's API: the backup unit's `OnFailure=` handler, and the image
 image-update notifications. Sending them straight to Telegram instead would
 have been simpler and would fail independently of Alertmanager's health, but
 would mean three senders formatting messages three different ways, and
@@ -139,7 +139,7 @@ blackbox       :9115 ─┘             :9090      alerts     :9093       (nativ
                                               firing)        │      (webhook)
 restic-backup.service ── OnFailure ──→ notify script ────────┤
                                        (POST /api/v2/alerts) │
-Diun (container) ──────── on new image tag ──────────────────┘
+image-update-check.sh ─── on a newer image tag ───────────────┘
 ```
 
 Three sensors feed Prometheus, which evaluates rules. Two event sources inject
@@ -153,7 +153,7 @@ alerts directly into Alertmanager. Alertmanager is the single exit point.
 | Alertmanager | pinned container | `caddy_network` | `9093` on host, LAN only |
 | cAdvisor | pinned container | `caddy_network` | `8080` on host |
 | blackbox exporter | pinned container | `caddy_network` | internal only |
-| Diun | pinned container | `caddy_network` | none |
+| image update check | systemd timer on the host | n/a | none |
 | Grafana | pinned container (existing) | `caddy_network` | via Caddy |
 | node-exporter | pacman package (existing) | host | `9100` |
 
@@ -194,54 +194,63 @@ backup failure or a new image tag is a moment, not a state; pushed naively it
 would re-notify indefinitely. Both event paths therefore set an explicit
 `endsAt` a few minutes in the future so the alert self-resolves.
 
-### What Diun watches, given digest pinning
+### Image updates — a tag-list checker, not Diun
 
-Every image in this repo is pinned to both a version tag and a digest, as
-`caddy:2.11.4@sha256:...`. That freezes the digest by definition, so Diun's
-default mode — watch a reference and report when its digest moves — would
-report essentially nothing. The useful signal is that a newer tag exists, which
-is `watch_repo` mode: Diun lists the repository's tags and reports ones it has
-not seen.
+Every image is pinned to both a version tag and a digest, as
+`caddy:2.11.4@sha256:...`. That freezes the digest by definition, so watching a
+reference for a digest change reports nothing. The useful signal is that a
+newer *tag* exists.
 
-The exception is any image whose tag is itself moving. `fauria/vsftpd:latest`
-is watched for digest changes rather than by repository, because repository
-watching there would report every unrelated tag in the repo while missing the
-thing that actually changes.
+**Diun was built for this increment and then removed.** Its model is one entry
+per tag, and it fetches a manifest for every tracked tag on every run — roughly
+two registry requests per tag, permanently. Docker Hub allows 100 requests per
+hour per IP. These eighteen images hold about 11,200 tags between them; Diun
+produced 402 HTTP 429s and never finished its second repository. `max_tags`
+would have fitted the budget only by capping which tags are examined, which
+converts the problem into a silent one.
 
-**No tag filtering initially.** Filtering is deferred until there is a week of
-real traffic to write it from. The asymmetry decides it: excess notifications
-are visible and easily tuned away, whereas a tag pattern that fails to match a
-repository's convention produces no error and no signal, so a missed release
-never announces itself. Several of these repositories use conventions a
-guessed pattern would get wrong — `linuxserver/kavita` appends `-ls120`,
-`plexinc/pms-docker` uses long build strings, and the Immich Postgres image
-encodes extension versions in its tag. Those are precisely the ones where a
-silent miss would matter, so they are observed rather than predicted.
+Listing a repository's tags is a single request and answers the actual
+question. `image-update-check.sh` runs daily from a systemd timer, reads which
+containers to check from their own labels, lists each repository's tags, and
+reports any that sort above the installed tag. A full run over eighteen images
+costs about eighteen requests and consumes no measurable quota.
 
-Diun checks daily rather than hourly. Unfiltered repository watching pages the
-full tag list, and some of these repositories publish thousands of tags; a
-daily schedule bounds registry API load without affecting what is reported.
-Diun's `first_check_notif` stays at its default of false, so the initial run
-records the existing tags silently instead of announcing all of them.
+Three properties of tag sorting had to be handled, each discovered by running
+it rather than by reasoning about it:
 
-Images are discovered through the Docker provider, with per-image settings
-carried as container labels rather than a static list. The image reference and
-its watch rule then live together in the role that owns them, so a service
-added later is watched the moment it ships and the watch list cannot drift from
-what is actually running.
+- `sort -V` ranks alphabetic tags above numeric ones, so the newest caddy tag
+  was `windowsservercore-ltsc2025` and the newest plex tag was `public`. A
+  baseline rule requires a tag to begin with a digit, or `v` and a digit. This
+  is the one include-shaped rule in the design, kept in one visible place
+  rather than spread across eighteen labels.
+- Variant tags sort above the plain version, sharing its prefix and being
+  longer, so the headline was usually an alpine or Windows build of the version
+  already installed. Comparison is therefore limited to tags whose *shape* —
+  the tag with every run of digits replaced by `#` — matches the installed
+  tag's.
+- That shape check must ignore the installed tag itself, which trivially
+  matches its own shape. Including it made every convention look valid, and
+  plex, whose tag embeds a build hash, would have reported "nothing newer"
+  forever: each release carries a different hash and therefore a different
+  shape. Where no *other* tag shares the shape, the check falls back to
+  reporting every newer tag — noise rather than silence.
 
-### Risk: Diun's payload shape
+**Tags are excluded, never included** (the baseline version-shape rule aside).
+An exclude pattern that is wrong produces visible noise that can be tuned away;
+an include pattern that is wrong produces silence, and a release that never
+arrives never announces itself. Several of these repositories use conventions a
+guessed include pattern would get wrong — `linuxserver/kavita` appends `-ls120`,
+`plexinc/pms-docker` uses build hashes, and the Immich Postgres image encodes
+extension versions in its tag.
 
-Diun's `webhook` notifier posts Diun's own JSON schema, and it is not
-confirmed that it can be templated into the `/api/v2/alerts` format
-Alertmanager requires. Diun also ships a `script` notifier that runs a command
-with `DIUN_ENTRY_*` environment variables set, which would allow the payload
-to be constructed directly.
+Which images are checked comes from container labels — `imagewatch.enable` and
+`imagewatch.exclude_tags` — so the image reference and its watch rule live
+together in the role that owns them. A service added later is checked the
+moment it ships, and the list cannot drift from what is running.
 
-Resolution during implementation: try the `script` notifier first. If neither
-works cleanly, fall back to Diun's built-in Telegram notifier talking directly
-to Telegram. That fallback costs grouping on image updates and nothing else,
-and does not affect any other part of this design.
+The script reports its own registry failures through Alertmanager as
+`ImageWatchFailed`. Nothing else would notice: node-exporter's `systemd`
+collector is not enabled, so a failed unit alerts nobody.
 
 ## Alert rules
 
@@ -560,11 +569,13 @@ chat id from `user_passwords.yml`.
 | `severity: critical` | 30s | 4h |
 | `severity: warning` | 30s | 24h |
 | `severity: info` | 5m | 7d |
-| Diun image updates | 5m | 7d |
+
 | `Watchdog` | — | webhook to Healthchecks, continuous |
 
-Diun's long group wait means ten images updating on the same afternoon arrive
-as one message rather than ten.
+Image updates carry `severity: info` and so use the `info` route, whose 5m
+group wait and 7d repeat interval are exactly what they need — no route of
+their own. The group wait is what makes six images updating on the same day
+arrive as one message rather than six; that grouping has been verified live.
 
 The bot token is supplied to Alertmanager via `bot_token_file` rather than
 inlined, which keeps the credential out of the configuration that gets
@@ -582,9 +593,9 @@ container on `caddy_network`:
   routing tree, webhook receiver for the Watchdog
 - `cadvisor` — container, Docker socket mounted read-only, publishes `:8080`
 - `blackbox_exporter` — container, probe module configuration
-- `diun` — container, Docker socket mounted read-only, notifier aimed at
-  Alertmanager, watching by repository with no tag filter (see "What Diun
-  watches, given digest pinning")
+- `imagewatch` — host script and systemd timer that lists each repository's
+  tags and reports newer ones to Alertmanager (see "Image updates — a tag-list
+  checker, not Diun")
 
 ### Modified roles
 
@@ -709,7 +720,7 @@ Six increments, each independently useful and independently revertable.
 | 3 | Disk health: smartmontools, textfile script and timer, SMART rules | none — delivered 2026-08-20 |
 | 4 | Container health: cAdvisor and rules | cAdvisor — delivered 2026-08-20 |
 | 5 | Reachability and TLS: blackbox exporter and rules | blackbox — delivered 2026-08-21 |
-| 6 | Diun image-update notifications | Diun |
+| 6 | Image-update notifications | none — delivered 2026-08-21 |
 
 Increment 1 proves the entire Telegram path end to end, so every increment
 after it is low-risk.
@@ -793,6 +804,30 @@ expendable.
   Adding a second host to this Prometheus would let one host's container
   satisfy another host's expected entry, silently defeating
   `ContainerMissing` for both.
+- **The FTP image is abandoned upstream.** `fauria/vsftpd` publishes only a
+  `latest` tag and was last pushed in January 2023, so no update can ever be
+  reported for it and the image-update check will stay silent about it
+  forever. An FTP server running on a base image three years without security
+  patches is a standing exposure that needs a decision — replace it, or drop
+  FTP — rather than monitoring. It is left enabled in the check only so that a
+  version tag appearing would be heard about.
+- **A tag whose shape no other tag shares falls back to reporting everything
+  newer.** `plexinc/pms-docker` embeds a build hash, so no two releases share
+  a shape and the check reports its architecture variants (`-amd64`, `-arm64`,
+  `-armhf`) as though they were updates. This is deliberate — the alternative
+  is missing every plex release silently — but it means one image contributes
+  a line of noise to each message until its convention is special-cased.
+- **A release tagged without a leading digit would be missed.** The baseline
+  rule requires a tag to begin with a digit, or `v` and a digit, which is what
+  stops `latest`, `public` and `windowsservercore-ltsc2025` being reported as
+  the newest version. Every convention in use here satisfies it, but it is the
+  one include-shaped rule in the design and so the one place a silent miss
+  remains possible.
+- **The image check reports what exists upstream, not whether it is safe to
+  take.** A major version appearing — `postgres` 16 to 18, `planka` 1.x to
+  2.x — says nothing about migrations or breaking changes, and both are
+  currently being reported. The alert is a prompt to go and read release
+  notes, not an instruction to bump the pin.
 
 ## Phase 2: inbound Telegram bot
 
