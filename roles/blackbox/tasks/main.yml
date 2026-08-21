@@ -1,0 +1,34 @@
+- name: Create blackbox config directory
+  ansible.builtin.file:
+    path: /mnt/storage/config/blackbox
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Write the blackbox probe module config
+  ansible.builtin.copy:
+    src: blackbox.yml
+    dest: /mnt/storage/config/blackbox/blackbox.yml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart blackbox
+
+- name: Pull the blackbox exporter image
+  community.docker.docker_image_pull:
+    name: "prom/blackbox-exporter:v0.28.0@sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc"
+    pull: not_present
+
+- name: Run blackbox exporter container
+  community.docker.docker_container:
+    name: blackbox
+    image: "prom/blackbox-exporter:v0.28.0@sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc"
+    state: started
+    restart_policy: always
+    networks:
+      - name: caddy_network
+    volumes:
+      - /mnt/storage/config/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    command:
+      - "--config.file=/etc/blackbox_exporter/config.yml"

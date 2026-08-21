@@ -48,3 +48,18 @@ monitored_containers:
   - portainer
   - prometheus
   - vaultwarden
+
+# The URLs blackbox probes, matching the Caddyfile's hostnames.
+#
+# plex is probed at /identity rather than /: its root returns 401 because it
+# requires authentication, so a default probe would report it permanently
+# down and EndpointDown would fire forever. /identity is unauthenticated and
+# returns 200 with the server's machineIdentifier.
+monitored_endpoints:
+  - https://books.home.danmidwood.com
+  - https://budget.home.danmidwood.com
+  - https://grafana.home.danmidwood.com
+  - https://passwords.home.danmidwood.com
+  - https://photos.home.danmidwood.com
+  - https://plex.home.danmidwood.com/identity
+  - https://projectboard.home.danmidwood.com

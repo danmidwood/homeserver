@@ -1,0 +1,5 @@
+- name: Restart blackbox
+  community.docker.docker_container:
+    name: blackbox
+    state: started
+    restart: true

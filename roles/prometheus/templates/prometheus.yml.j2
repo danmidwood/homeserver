@@ -33,3 +33,23 @@ scrape_configs:
       - targets: ["cadvisor:8080"]
         labels:
           instance: "xps"
+
+  # Blackbox is scraped once per endpoint. The relabeling passes each target
+  # to the exporter as a URL parameter, then rewrites the address so
+  # Prometheus actually talks to blackbox rather than to the endpoint.
+  - job_name: "blackbox"
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+{% for endpoint in monitored_endpoints %}
+          - "{{ endpoint }}"
+{% endfor %}
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

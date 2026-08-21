@@ -1,0 +1,18 @@
+modules:
+  http_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      # Grafana redirects / to /login, so the probe must follow to reach a
+      # 2xx. Without this it would report Grafana permanently down.
+      follow_redirects: true
+      # Empty means "any 2xx". Anything wider would let a 500 page count as
+      # a healthy service.
+      valid_status_codes: []
+      # Verified: these hostnames publish no AAAA record, and the server
+      # has a global IPv6 address but no working IPv6 route. So IPv6 is
+      # never attempted today. This is set explicitly anyway, so that
+      # someone adding an AAAA record later cannot silently change which
+      # path is being probed without noticing.
+      preferred_ip_protocol: ip4
