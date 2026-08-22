@@ -4,6 +4,9 @@ backup_retention_monthly: 12
 
 backup_paths:
   - /mnt/storage/backup/db-dumps
+  # The restore drill's canary. Must be backed up, or there is nothing to
+  # restore and compare.
+  - /mnt/storage/backup/canary
   - /mnt/storage/config/actual-budget/data
   - /mnt/storage/config/vaultwarden
   - /mnt/storage/config/planka/user-avatars

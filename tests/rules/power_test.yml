@@ -1,0 +1,107 @@
+rule_files:
+  - ../../roles/prometheus/files/rules/power.yml
+
+evaluation_interval: 1m
+
+tests:
+  # On mains with a full battery: complete silence.
+  - interval: 1m
+    input_series:
+      - series: 'node_power_supply_online{instance="xps",job="node",power_supply="AC"}'
+        values: '1+0x30'
+      - series: 'node_power_supply_capacity{instance="xps",job="node",power_supply="BAT0"}'
+        values: '100+0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: OnBatteryPower
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BatteryCriticallyLow
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: PowerMetricsMissing
+        exp_alerts: []
+
+  # Mains lost, battery still healthy: OnBatteryPower only.
+  - interval: 1m
+    input_series:
+      - series: 'node_power_supply_online{instance="xps",job="node",power_supply="AC"}'
+        values: '0+0x30'
+      - series: 'node_power_supply_capacity{instance="xps",job="node",power_supply="BAT0"}'
+        values: '90+0x30'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: OnBatteryPower
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: OnBatteryPower
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              instance: xps
+              job: node
+              power_supply: AC
+            exp_annotations:
+              summary: "Running on battery — mains power is gone"
+              description: "The server has been on battery for over 2 minutes. Battery is at 0%. It will keep running until the battery is exhausted and then stop abruptly unless mains returns or it is shut down cleanly."
+      # A healthy battery must not trip the low-battery alert.
+      - eval_time: 10m
+        alertname: BatteryCriticallyLow
+        exp_alerts: []
+
+  # A low battery while ON MAINS is a charging laptop, not an emergency. This
+  # is the false positive the `and on()` guard exists to prevent.
+  - interval: 1m
+    input_series:
+      - series: 'node_power_supply_online{instance="xps",job="node",power_supply="AC"}'
+        values: '1+0x30'
+      - series: 'node_power_supply_capacity{instance="xps",job="node",power_supply="BAT0"}'
+        values: '10+0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BatteryCriticallyLow
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: OnBatteryPower
+        exp_alerts: []
+
+  # Low battery AND no mains: both fire, which is correct -- they say different
+  # things and the second is the actionable one.
+  - interval: 1m
+    input_series:
+      - series: 'node_power_supply_online{instance="xps",job="node",power_supply="AC"}'
+        values: '0+0x30'
+      - series: 'node_power_supply_capacity{instance="xps",job="node",power_supply="BAT0"}'
+        values: '15+0x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BatteryCriticallyLow
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              instance: xps
+              job: node
+              power_supply: BAT0
+            exp_annotations:
+              summary: "Battery at 15% and still on battery power"
+              description: "Mains is still absent and the battery is nearly flat. An abrupt power loss risks an unclean shutdown of the databases. Shut the host down cleanly if mains is not coming back soon."
+
+  # No metric at all: PowerMetricsMissing, because absence looks like health.
+  - interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PowerMetricsMissing
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: PowerMetricsMissing
+        exp_alerts:
+          # absent() carries the matcher's own labels into the result, so the
+          # alert is labelled power_supply="AC" even though no such series
+          # exists.
+          - exp_labels:
+              severity: warning
+              power_supply: AC
+            exp_annotations:
+              summary: "No mains power metric is being reported"
+              description: "node_power_supply_online for AC has been absent for an hour, so OnBatteryPower cannot fire and a power loss would go unnoticed. Check that node-exporter still sees /sys/class/power_supply."

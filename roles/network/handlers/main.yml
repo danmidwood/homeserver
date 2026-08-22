@@ -1,0 +1,6 @@
+- name: Reload NetworkManager
+  # Reload, not restart: restarting NetworkManager over a wifi connection drops
+  # the link this playbook is running across.
+  ansible.builtin.systemd:
+    name: NetworkManager
+    state: reloaded

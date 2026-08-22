@@ -48,3 +48,35 @@ groups:
         annotations:
           summary: "Backup metrics are missing entirely"
           description: "node_exporter is not exporting restic_backup_last_success_timestamp_seconds, so BackupStale cannot fire and the backup is effectively unmonitored. Either no backup has succeeded since this was deployed, or the textfile collector is broken — check /var/lib/node_exporter/textfile_collector/restic_backup.prom exists and node_textfile_scrape_error is 0."
+
+      # The drill runs weekly. Ten days allows a missed run plus its jitter
+      # before complaining, so a single skipped week is noticed but a late one
+      # is not.
+      #
+      # This is the rule that matters most in the whole file: everything else
+      # here proves a backup RAN. Only this proves what it wrote can be read
+      # back. A silent failure of the drill would leave the backups looking
+      # perfect right up until the day they were needed.
+      - alert: RestoreDrillStale
+        expr: time() - restic_restore_last_success_timestamp_seconds > 10 * 24 * 3600
+        # No `for:`, matching BackupStale. The condition is already a ten-day
+        # window, so a holding period adds nothing -- and on a metric written
+        # once a week, a `for:` cannot be satisfied at all: Prometheus's
+        # five-minute lookback means the series does not exist for most of the
+        # interval between samples.
+        labels:
+          severity: warning
+        annotations:
+          summary: "The backups have not been proven restorable for over 10 days"
+          description: "restic-restore-check has not completed successfully in more than 10 days, so nothing currently confirms the backups can be read back. Run `systemctl start restic-restore-check` and check `journalctl -u restic-restore-check`."
+
+      # The staleness rule above compares a timestamp; an absent timestamp has
+      # nothing to compare and would silently never fire.
+      - alert: RestoreDrillMetricMissing
+        expr: absent(restic_restore_last_success_timestamp_seconds)
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "No restore drill has ever succeeded"
+          description: "restic_restore_last_success_timestamp_seconds does not exist, so RestoreDrillStale cannot fire and nothing is confirming the backups are restorable. Expected after first provisioning the host, until the first weekly drill runs."

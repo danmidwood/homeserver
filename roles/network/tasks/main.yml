@@ -9,3 +9,14 @@
     name: NetworkManager
     enabled: true
     state: started
+
+- name: Never stop retrying the wifi connection
+  # Without this the server stays offline after any outage that takes the
+  # router down for more than a couple of minutes.
+  ansible.builtin.copy:
+    src: autoconnect-retries.conf
+    dest: /etc/NetworkManager/conf.d/autoconnect-retries.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload NetworkManager

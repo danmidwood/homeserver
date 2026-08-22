@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly proof that the restic backups can be restored
+
+[Timer]
+# Sunday, well clear of the nightly backup at midnight so the two never
+# contend for a repository lock.
+OnCalendar=Sun *-*-* 04:00:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

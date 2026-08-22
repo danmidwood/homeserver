@@ -89,3 +89,56 @@ tests:
             exp_annotations:
               summary: "Backup metrics are missing entirely"
               description: "node_exporter is not exporting restic_backup_last_success_timestamp_seconds, so BackupStale cannot fire and the backup is effectively unmonitored. Either no backup has succeeded since this was deployed, or the textfile collector is broken — check /var/lib/node_exporter/textfile_collector/restic_backup.prom exists and node_textfile_scrape_error is 0."
+
+  # A drill that ran recently: silence.
+  - interval: 1h
+    input_series:
+      - series: 'restic_restore_last_success_timestamp_seconds{instance="xps",job="node"}'
+        values: '0+0x30'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: RestoreDrillStale
+        exp_alerts: []
+      - eval_time: 2h
+        alertname: RestoreDrillMetricMissing
+        exp_alerts: []
+
+  # A drill that has not succeeded for over ten days. promtool's clock starts
+  # at zero, so a timestamp of 0 becomes stale once eval_time passes 10 days.
+  - interval: 1h
+    input_series:
+      - series: 'restic_restore_last_success_timestamp_seconds{instance="xps",job="node"}'
+        values: '0+0x400'
+    alert_rule_test:
+      # Not yet stale at exactly ten days: the rule is a strict `>`, so the
+      # threshold itself must pass before it can fire.
+      - eval_time: 240h
+        alertname: RestoreDrillStale
+        exp_alerts: []
+      - eval_time: 250h
+        alertname: RestoreDrillStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: xps
+              job: node
+            exp_annotations:
+              summary: "The backups have not been proven restorable for over 10 days"
+              description: "restic-restore-check has not completed successfully in more than 10 days, so nothing currently confirms the backups can be read back. Run `systemctl start restic-restore-check` and check `journalctl -u restic-restore-check`."
+
+  # No drill has ever run: the staleness rule cannot fire, so absence is its
+  # own alert.
+  - interval: 1h
+    input_series: []
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: RestoreDrillMetricMissing
+        exp_alerts: []
+      - eval_time: 3h
+        alertname: RestoreDrillMetricMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "No restore drill has ever succeeded"
+              description: "restic_restore_last_success_timestamp_seconds does not exist, so RestoreDrillStale cannot fire and nothing is confirming the backups are restorable. Expected after first provisioning the host, until the first weekly drill runs."

@@ -40,6 +40,59 @@
     group: daniel
     mode: '0755'
 
+- name: Create the restore-drill canary directory
+  # The canary is what the weekly restore drill restores and compares. A real
+  # user file would be a better subject, but nothing here is stable enough to
+  # compare against: anything worth backing up changes, and a mismatch caused by
+  # a legitimate edit would be a false alarm every time.
+  ansible.builtin.file:
+    path: /mnt/storage/backup/canary
+    state: directory
+    owner: daniel
+    group: daniel
+    mode: '0755'
+
+- name: Write the restore-drill canary
+  # Deliberately static. If the content changed on every run, a restore of
+  # yesterday's snapshot would never match today's live file.
+  ansible.builtin.copy:
+    content: |
+      This file exists so the weekly restore drill has something with known
+      content to restore and compare. It is written by Ansible and must not
+      change: restic-restore-check.sh restores it from the latest snapshot and
+      compares its hash against this copy, so an edit here would look like a
+      corrupted backup until the next nightly backup runs.
+    dest: /mnt/storage/backup/canary/canary.txt
+    owner: daniel
+    group: daniel
+    mode: '0644'
+
+- name: Install the restore drill script
+  ansible.builtin.copy:
+    src: restic-restore-check.sh
+    dest: /usr/local/bin/restic-restore-check.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the restore drill unit
+  ansible.builtin.copy:
+    src: restic-restore-check.service
+    dest: /etc/systemd/system/restic-restore-check.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd
+
+- name: Install the restore drill timer
+  ansible.builtin.copy:
+    src: restic-restore-check.timer
+    dest: /etc/systemd/system/restic-restore-check.timer
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd
+
 - name: Template backup script
   template:
     src: restic-backup.sh.j2
@@ -89,6 +142,13 @@
 - name: Enable and start the restic backup timer
   systemd:
     name: restic-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable and start the restore drill timer
+  systemd:
+    name: restic-restore-check.timer
     enabled: true
     state: started
     daemon_reload: true

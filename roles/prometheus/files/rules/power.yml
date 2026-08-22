@@ -1,0 +1,49 @@
+groups:
+  - name: power
+    rules:
+      # This host is a laptop, so it has a UPS built in. node-exporter already
+      # exports the battery and mains state; these rules are the only thing
+      # that reads them.
+      #
+      # An important limit on what this can tell you: if the whole house loses
+      # power, the router goes down with it and the alert cannot be delivered
+      # until the network returns. What these rules genuinely catch is the
+      # server losing mains while the network survives -- an unplugged cable, a
+      # tripped socket, a failed power brick. Total outage is covered instead by
+      # the Watchdog heartbeat going quiet, which is noticed off-site by
+      # Healthchecks.io. The two are complementary and neither replaces the
+      # other.
+      - alert: OnBatteryPower
+        expr: node_power_supply_online{power_supply="AC"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Running on battery — mains power is gone"
+          description: "The server has been on battery for over 2 minutes. Battery is at {{ printf \"%.0f\" $value }}%. It will keep running until the battery is exhausted and then stop abruptly unless mains returns or it is shut down cleanly."
+
+      # Separate from the alert above because it means something different: not
+      # "the power went out" but "you are about to lose the machine". The
+      # battery is at roughly half its design capacity, so the runtime this
+      # leaves is shorter than the percentage suggests.
+      - alert: BatteryCriticallyLow
+        expr: |
+          node_power_supply_capacity{power_supply="BAT0"} < 30
+            and on() (node_power_supply_online{power_supply="AC"} == 0)
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Battery at {{ printf \"%.0f\" $value }}% and still on battery power"
+          description: "Mains is still absent and the battery is nearly flat. An abrupt power loss risks an unclean shutdown of the databases. Shut the host down cleanly if mains is not coming back soon."
+
+      # Neither rule above can fire if the metric stops being collected, and a
+      # missing power metric looks exactly like a healthy machine.
+      - alert: PowerMetricsMissing
+        expr: absent(node_power_supply_online{power_supply="AC"})
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "No mains power metric is being reported"
+          description: "node_power_supply_online for AC has been absent for an hour, so OnBatteryPower cannot fire and a power loss would go unnoticed. Check that node-exporter still sees /sys/class/power_supply."

@@ -1,0 +1,14 @@
+[Unit]
+Description=Prove the restic backups can be restored
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+EnvironmentFile=/etc/restic/env
+ExecStart=/usr/local/bin/restic-restore-check.sh
+# systemd leaves the start timeout at infinity for Type=oneshot, so a check
+# wedged on a dead connection would hang forever, the unit would stay
+# activating, and the next week's trigger would be skipped silently.
+TimeoutStartSec=3h
