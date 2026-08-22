@@ -356,6 +356,37 @@ fi
 # notice: node-exporter's systemd collector is not enabled, so a failed unit
 # alerts nobody. The script therefore reports its own failure through the same
 # path, rather than relying on a supervisor that is not watching.
+# A pushed alert stays firing until its endsAt passes, so a run that fixes the
+# problem has to say so explicitly. Without this an ImageWatchFailed raised by a
+# single transient error would keep firing for a full day after the next run
+# succeeded -- which is exactly what happened the first time it fired.
+#
+# Alertmanager treats an alert whose endsAt is in the past as resolved, and
+# matches it to the existing one by its label set, so these labels must stay
+# identical to the ones raised below.
+resolve_failure_alert() {
+  jq -n \
+    --arg starts "$STARTS_AT" \
+    --arg ends "$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:%SZ)" \
+    '[{
+        labels: {
+          alertname: "ImageWatchFailed",
+          severity: "warning",
+          instance: "xps",
+          job: "imagewatch"
+        },
+        startsAt: $starts,
+        endsAt: $ends
+      }]' \
+    | curl -sf "${RETRY[@]}" --max-time 30 \
+        -H "Content-Type: application/json" \
+        --data @- "$ALERTMANAGER_URL" >/dev/null || true
+}
+
+if [[ "$failed" -eq 0 ]]; then
+  resolve_failure_alert
+fi
+
 if [[ "$failed" -gt 0 ]]; then
   fail_alert="$(jq -n \
     --arg failed "$failed" \
