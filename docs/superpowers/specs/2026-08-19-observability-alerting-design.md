@@ -823,6 +823,12 @@ expendable.
   listings and never downloads pack contents — which is precisely why a check
   that reads real data was worth adding.
 
+  The drill reads a deterministic slice each week, and restic buckets packs by
+  the first byte of the pack id, so `0xad % 52 = 17` puts this one in slice 18 —
+  confirmed by running that slice directly. Left unrepaired it would next be
+  detected in ISO week 18, which is why the repair is recorded here rather than
+  left to the schedule.
+
   Repairing it needs the delete-capable B2 key, which deliberately does not
   live on the server, so it must be run from the machine that holds it:
   `restic repair packs ad7228110db83af0af83e00cb55d3da71aa4380a4ca0568ac3ab21d5439700b5`
