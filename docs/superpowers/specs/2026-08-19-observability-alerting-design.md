@@ -817,6 +817,21 @@ expendable.
   to five files under `/mnt/tmdas/immich/upload/` — one 190 MB `.MOV`, three
   images and an XMP sidecar.
 
+  **The fault is Backblaze's, and it is proven.** B2 lists the object at
+  16,888,900 bytes — exactly the size restic's index expects — and a plain
+  `aws s3 cp` of it, with restic entirely out of the picture, returns zero
+  bytes and "Max Retries Exceeded". A truncated upload would list a smaller
+  size; this is the backend failing to serve an object it claims to hold. It
+  was uploaded 2026-08-18 21:44, with the very first snapshot, so it has
+  probably never been readable.
+
+  The consequence is bigger than one object: if B2 can lose contents while
+  reporting correct metadata, structural `restic check` can never detect it,
+  because that check trusts object listings and never downloads. Only a
+  read-data check can. A full `restic check --read-data` is therefore worth
+  running once to establish whether this is one object or many — the weekly
+  rotating drill covers the repository, but takes a year to sweep it.
+
   **No data is lost:** all five files are present on the live server. What is
   missing is their offsite copy. A structural `restic check` reports no errors
   and verifies all snapshots, because it compares the index against object
