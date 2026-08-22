@@ -808,14 +808,16 @@ expendable.
   Adding a second host to this Prometheus would let one host's container
   satisfy another host's expected entry, silently defeating
   `ContainerMissing` for both.
-- **One pack in the restic repository is unreadable, and five Immich files are
-  therefore not restorable from B2.** Found by the first run of the weekly
-  restore drill, on 2026-08-22. `data/ad7228110d…` returns `unexpected EOF` at
-  offset 0 on every attempt, while other packs read normally in the same
-  session, so this is that object rather than the backend being unwell. All
-  fourteen of its blobs are referenced by the current snapshot, and they belong
-  to five files under `/mnt/tmdas/immich/upload/` — one 190 MB `.MOV`, three
-  images and an XMP sidecar.
+- **Three packs in the restic repository are unreadable, and 62 Immich files
+  are therefore not restorable from B2.** Found by the first run of the weekly
+  restore drill, on 2026-08-22, which caught `data/ad7228110d…` returning
+  `unexpected EOF` at offset 0. A full `restic check --read-data` over all 2052
+  objects then took 27 minutes and found exactly three such packs and no other
+  errors: `ad7228110d`, `1776227017` and `350fde54b8`. Their blobs are all
+  referenced by the current snapshot and belong to 62 files under
+  `/mnt/tmdas/immich/upload/` — 29 XMP sidecars and 32 images and videos,
+  249 MB in total. Three bad objects in 2052 is a loss rate of 0.15%, against
+  advertised eleven-nines durability.
 
   **The fault is Backblaze's, and it is proven.** B2 lists the object at
   16,888,900 bytes — exactly the size restic's index expects — and a plain
@@ -832,7 +834,8 @@ expendable.
   running once to establish whether this is one object or many — the weekly
   rotating drill covers the repository, but takes a year to sweep it.
 
-  **No data is lost:** all five files are present on the live server. What is
+  **No data is lost:** all 62 files are present on the live server, verified
+  individually. What is
   missing is their offsite copy. A structural `restic check` reports no errors
   and verifies all snapshots, because it compares the index against object
   listings and never downloads pack contents — which is precisely why a check
