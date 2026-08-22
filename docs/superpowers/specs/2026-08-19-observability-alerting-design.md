@@ -808,6 +808,27 @@ expendable.
   Adding a second host to this Prometheus would let one host's container
   satisfy another host's expected entry, silently defeating
   `ContainerMissing` for both.
+- **One pack in the restic repository is unreadable, and five Immich files are
+  therefore not restorable from B2.** Found by the first run of the weekly
+  restore drill, on 2026-08-22. `data/ad7228110d…` returns `unexpected EOF` at
+  offset 0 on every attempt, while other packs read normally in the same
+  session, so this is that object rather than the backend being unwell. All
+  fourteen of its blobs are referenced by the current snapshot, and they belong
+  to five files under `/mnt/tmdas/immich/upload/` — one 190 MB `.MOV`, three
+  images and an XMP sidecar.
+
+  **No data is lost:** all five files are present on the live server. What is
+  missing is their offsite copy. A structural `restic check` reports no errors
+  and verifies all snapshots, because it compares the index against object
+  listings and never downloads pack contents — which is precisely why a check
+  that reads real data was worth adding.
+
+  Repairing it needs the delete-capable B2 key, which deliberately does not
+  live on the server, so it must be run from the machine that holds it:
+  `restic repair packs ad7228110db83af0af83e00cb55d3da71aa4380a4ca0568ac3ab21d5439700b5`
+  followed by `restic repair index`, and then a normal backup on the server to
+  re-upload the affected blobs. Until that happens the weekly drill will keep
+  failing, which is correct — the backup really is incomplete.
 - **restic locking against B2 fails intermittently.** On 2026-08-21 every
   locking operation failed with "Storage class not supported on this cluster:
   STANDARD" — the S3 endpoint rejecting the storage class header restic sends —

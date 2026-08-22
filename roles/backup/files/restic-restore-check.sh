@@ -75,7 +75,12 @@ echo "==> verifying a sample of stored data"
 # 1% weekly covers the whole repository over about two years, at a bandwidth
 # cost of a few hundred megabytes a week. Raising it costs B2 egress; lowering
 # it lengthens the time before corruption anywhere would be noticed.
-if ! restic check --read-data-subset=1% 2>&1; then
+# s3.retries is lowered from the default because this is a check, not a
+# transfer. restic's normal exponential backoff spent twenty minutes retrying a
+# pack that was never going to read, on the first real run -- a genuinely
+# damaged pack should fail in seconds so the alert arrives while the run is
+# still fresh.
+if ! restic check --read-data-subset=1% -o s3.retries=3 2>&1; then
   note "restic check reported a problem with the stored data"
   failures=$((failures + 1))
 fi
