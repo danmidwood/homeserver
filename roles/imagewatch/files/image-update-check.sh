@@ -23,6 +23,14 @@
 set -uo pipefail
 
 ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://localhost:9093/api/v2/alerts}"
+
+# Registry calls retry before giving up. A large repository is paginated, so one
+# image can take several requests, and a single transient 5xx or reset would
+# otherwise mark that image as unchecked and raise ImageWatchFailed -- which is
+# what happened on the first scheduled run, for a repository that was reachable
+# again seconds later. --retry-all-errors is needed because curl only retries
+# transient HTTP codes by default, not connection resets.
+RETRY=(--retry 3 --retry-delay 2 --retry-all-errors)
 LABEL_ENABLE="imagewatch.enable"
 LABEL_EXCLUDE="imagewatch.exclude_tags"
 
@@ -178,9 +186,9 @@ registry_host() {
 auth_token() {
   local registry="$1" repo="$2"
   case "$registry" in
-    docker.io) curl -sf --max-time 30 "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repo}:pull" ;;
-    ghcr.io)   curl -sf --max-time 30 "https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull" ;;
-    gcr.io)    curl -sf --max-time 30 "https://gcr.io/v2/token?service=gcr.io&scope=repository:${repo}:pull" ;;
+    docker.io) curl -sf "${RETRY[@]}" --max-time 30 "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repo}:pull" ;;
+    ghcr.io)   curl -sf "${RETRY[@]}" --max-time 30 "https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull" ;;
+    gcr.io)    curl -sf "${RETRY[@]}" --max-time 30 "https://gcr.io/v2/token?service=gcr.io&scope=repository:${repo}:pull" ;;
     *)         echo '{}' ;;
   esac | jq -r '.token // empty'
 }
@@ -195,7 +203,7 @@ list_tags() {
 
   while [[ -n "$url" ]]; do
     hdr="$(mktemp)"
-    body="$(curl -sf --max-time 60 -D "$hdr" -H "Authorization: Bearer ${token}" "$url")" || {
+    body="$(curl -sf "${RETRY[@]}" --max-time 60 -D "$hdr" -H "Authorization: Bearer ${token}" "$url")" || {
       rm -f "$hdr"; return 1
     }
     printf '%s\n' "$body" | jq -r '.tags[]? // empty'
