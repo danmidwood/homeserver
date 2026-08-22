@@ -72,15 +72,22 @@ else
 fi
 
 echo "==> verifying a sample of stored data"
-# 1% weekly covers the whole repository over about two years, at a bandwidth
-# cost of a few hundred megabytes a week. Raising it costs B2 egress; lowering
-# it lengthens the time before corruption anywhere would be noticed.
-# s3.retries is lowered from the default because this is a check, not a
-# transfer. restic's normal exponential backoff spent twenty minutes retrying a
-# pack that was never going to read, on the first real run -- a genuinely
-# damaged pack should fail in seconds so the alert arrives while the run is
-# still fresh.
-if ! restic check --read-data-subset=1% -o s3.retries=3 2>&1; then
+# One fifty-second of the repository each week, so a full pass takes a year at
+# a bandwidth cost of a few hundred megabytes a week.
+# A rotating slice, NOT a percentage. --read-data-subset=1% reads a RANDOM 1%
+# on every run, which samples rather than covers: a corrupt pack has roughly a
+# one-in-a-hundred chance of being picked each week, and may never be picked at
+# all. That is not a theoretical worry -- the first run of this drill found a
+# genuinely unreadable pack, and the very next run passed cleanly without
+# touching it, which would have read as an all-clear.
+#
+# The n/t form instead splits the repository deterministically by pack id and
+# reads slice n of t. Rotating n by ISO week covers every pack in the
+# repository exactly once a year, with no gaps and no repeats, for the same
+# bandwidth per run.
+WEEK=$(( (10#$(date +%V) - 1) % 52 + 1 ))
+echo "  reading slice ${WEEK} of 52"
+if ! restic check --read-data-subset="${WEEK}/52" -o s3.retries=3 2>&1; then
   note "restic check reported a problem with the stored data"
   failures=$((failures + 1))
 fi
@@ -121,10 +128,16 @@ if [ "$failures" -gt 0 ]; then
 fi
 
 # A pushed alert fires until its endsAt passes, so a run that succeeds has to
-# retract an earlier failure explicitly. Same labels, endsAt in the past.
+# retract an earlier failure explicitly. Same labels, because Alertmanager
+# matches on the label set alone.
+#
+# startsAt is deliberately an hour back rather than this run's start.
+# Alertmanager rejects an alert whose endsAt precedes its startsAt, and a run
+# that finishes in under a minute would produce exactly that -- which is why an
+# earlier version of this silently failed to clear anything.
 jq -n \
-  --arg starts "$(date -u -d "@${START}" +%Y-%m-%dT%H:%M:%SZ)" \
-  --arg ends "$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg starts "$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg ends "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   '[{
       labels: {
         alertname: "RestoreDrillFailed",

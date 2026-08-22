@@ -365,9 +365,12 @@ fi
 # matches it to the existing one by its label set, so these labels must stay
 # identical to the ones raised below.
 resolve_failure_alert() {
+  # startsAt is an hour back, not this run's start: Alertmanager rejects an
+  # alert whose endsAt precedes its startsAt, and a fast run would produce
+  # exactly that. This worked only because a full check takes over a minute.
   jq -n \
-    --arg starts "$STARTS_AT" \
-    --arg ends "$(date -u -d '-1 minute' +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg starts "$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg ends "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '[{
         labels: {
           alertname: "ImageWatchFailed",
