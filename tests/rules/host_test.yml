@@ -416,3 +416,34 @@ tests:
       - eval_time: 25m
         alertname: TextfileCollectorError
         exp_alerts: []
+
+  # /var below 5% must raise VarSpaceCritical and nothing else. It used to
+  # satisfy DiskSpaceCritical as well, sending two Telegram messages for one
+  # full filesystem. Excluding it there costs no coverage, because
+  # VarSpaceCritical fires at 15% and so has already fired long before.
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="xps",job="node",device="/dev/nvme0n1p3",fstype="ext4",mountpoint="/var"}'
+        values: '2+0x120'
+      - series: 'node_filesystem_size_bytes{instance="xps",job="node",device="/dev/nvme0n1p3",fstype="ext4",mountpoint="/var"}'
+        values: '100+0x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: DiskSpaceCritical
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: DiskSpaceLow
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: VarSpaceCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              instance: xps
+              job: node
+              device: /dev/nvme0n1p3
+              fstype: ext4
+              mountpoint: /var
+            exp_annotations:
+              summary: "/var has under 15% free"
+              description: "/var on xps is at 2% free. A full /var stops Docker and journald writing, which takes the services down."

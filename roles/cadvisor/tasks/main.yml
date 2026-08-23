@@ -26,7 +26,13 @@
     networks:
       - name: caddy_network
     ports:
-      - "8080:8080"
+      # Loopback only. Prometheus scrapes this over the container network as
+      # cadvisor:8080, not through a published port, so nothing legitimate
+      # loses access. Keeping a published port lets the LAN read per-container
+      # resource use and process names, which is a needless disclosure. It
+      # stays published on loopback purely so the port can be curled during
+      # debugging from the host.
+      - "127.0.0.1:8080:8080"
     volumes:
       # Narrowed to what cAdvisor's Docker/containerd factory needs to
       # enumerate containers and report the four metrics the rules read,

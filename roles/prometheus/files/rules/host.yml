@@ -2,9 +2,14 @@ groups:
   - name: host
     rules:
       - alert: DiskSpaceCritical
+        # /var is excluded here, exactly as it is from DiskSpaceLow, because
+        # VarSpaceCritical already covers it — and covers it harder, firing at
+        # 15% rather than 5%. Without this exclusion a genuinely full /var
+        # satisfied both rules and sent two Telegram messages for one problem.
+        # Excluding it loses no coverage: the stricter rule still fires first.
         expr: |
-          node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|overlay|squashfs",mountpoint!="/mnt/seagate"}
-            / node_filesystem_size_bytes{fstype!~"tmpfs|ramfs|overlay|squashfs",mountpoint!="/mnt/seagate"}
+          node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|overlay|squashfs",mountpoint!="/mnt/seagate",mountpoint!="/var"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|ramfs|overlay|squashfs",mountpoint!="/mnt/seagate",mountpoint!="/var"}
             < 0.05
         for: 15m
         labels:

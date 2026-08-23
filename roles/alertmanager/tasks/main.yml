@@ -91,7 +91,13 @@
     networks:
       - name: caddy_network
     ports:
-      - "9093:9093"
+      # Loopback only, and this one matters most: Alertmanager's API accepts
+      # silences with no authentication whatsoever. On 0.0.0.0 anyone on the
+      # LAN could mute every alert on this host indefinitely, and nothing would
+      # report that it had happened. The host scripts that push alerts
+      # (backup-alert, image-update-check, restic-restore-check) and the
+      # Telegram bot all use localhost, so none of them notice the change.
+      - "127.0.0.1:9093:9093"
     volumes:
       - /mnt/storage/config/alertmanager/conf:/etc/alertmanager/conf:ro
       - /mnt/storage/config/alertmanager/data:/alertmanager

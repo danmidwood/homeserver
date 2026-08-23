@@ -64,7 +64,17 @@
       # unit-include is deliberately narrow. Without it the collector exports a
       # series per unit on the host, which is hundreds of series carrying no
       # information anyone will ever alert on.
-      NODE_EXPORTER_ARGS="--collector.textfile.directory=/var/lib/node_exporter/textfile_collector --collector.systemd --collector.systemd.unit-include=(telegram-bot|restic-backup|restic-restore-check|backup-alert|image-update-check|docker)\\.(service|timer)"
+      # Bound to the docker0 gateway rather than every interface. Prometheus
+      # runs in a container and reaches the host as host.docker.internal, which
+      # resolves to exactly this address, so the only legitimate consumer is
+      # unaffected — and the host can still curl it, since the host owns the
+      # address. On 0.0.0.0 it offered the LAN an unauthenticated read of ~2500
+      # metrics describing this machine.
+      #
+      # If docker0 ever changed subnet, node-exporter would fail to bind and
+      # the unit would fail loudly, and TargetDown would fire within ten
+      # minutes. That is the right failure direction for a change like this.
+      NODE_EXPORTER_ARGS="--web.listen-address=172.17.0.1:9100 --collector.textfile.directory=/var/lib/node_exporter/textfile_collector --collector.systemd --collector.systemd.unit-include=(telegram-bot|restic-backup|restic-restore-check|backup-alert|image-update-check|docker)\\.(service|timer)"
     dest: /etc/conf.d/prometheus-node-exporter
     owner: root
     group: root
@@ -233,7 +243,12 @@
     networks:
       - name: caddy_network
     ports:
-      - "9090:9090"
+      # Loopback only. Prometheus has no authentication, and everything that
+      # legitimately reaches it does so either from the host (the Telegram bot
+      # reads localhost:9090) or over the container network (Grafana uses
+      # prometheus:9090). Publishing on 0.0.0.0 only ever offered the LAN a
+      # read of every metric about this machine.
+      - "127.0.0.1:9090:9090"
     etc_hosts:
       host.docker.internal: host-gateway
     volumes:
