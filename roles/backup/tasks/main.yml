@@ -75,6 +75,18 @@
     group: root
     mode: '0755'
 
+- name: Install the damaged-pack mapping script
+  # Used by hand after a restore drill failure, to turn a list of unreadable
+  # packs into the list of files that can no longer be restored. Kept in the
+  # repository rather than written ad hoc, because the moment it is wanted is
+  # exactly the moment nobody wants to be reconstructing a script.
+  ansible.builtin.copy:
+    src: map-bad-packs.sh
+    dest: /usr/local/bin/map-bad-packs.sh
+    owner: root
+    group: root
+    mode: '0755'
+
 - name: Install the restore drill unit
   ansible.builtin.copy:
     src: restic-restore-check.service

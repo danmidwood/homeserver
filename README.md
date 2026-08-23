@@ -2,6 +2,12 @@
 
 This is my config to set up a Dell XPS 9360 as a home server.
 
+**When something is broken, or you are rebuilding from nothing, start with
+[`docs/runbook.md`](docs/runbook.md).** This file covers the first install; the
+runbook covers everything after it — what each alert means, how to repair a
+damaged backup repository, what has to exist off-machine before a rebuild is
+possible, and the traps that have already caught us once.
+
 ## Steps
 
 ### Prep on dev laptop
