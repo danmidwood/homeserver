@@ -6,40 +6,95 @@
     group: daniel
     mode: '0755'
 
-- name: Ensure user daniel is in ftp group
+- name: Ensure user daniel can read the doorbell uploads
+  # The container writes as uid 14 / gid 50. On Debian, which the FTP image is
+  # built on, gid 50 is `ftp`; on Arch it is `games`. Same number, different
+  # name — so files land as ftp:games on the host, and membership of `games` is
+  # what lets daniel read them. This has nothing to do with games.
   ansible.builtin.user:
     name: daniel
     groups: games
     append: yes
   become: yes
 
+- name: Create the FTP TLS directory
+  # The DIRECTORY is bind-mounted rather than the certificate file, per the
+  # repository-wide rule: a single-file bind mount pins Docker to one inode
+  # that an atomic rewrite would orphan.
+  ansible.builtin.file:
+    path: /mnt/storage/config/ftp/ssl
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Generate a self-signed certificate for FTPS
+  # Self-signed because the doorbell connects to xps.fritz.box, and .fritz.box
+  # is not a public domain, so no public CA can issue for it. That is not a
+  # real loss here: the point of FTPS on this LAN is to stop the FTP password
+  # crossing the wire in clear text, which encryption achieves whether or not
+  # the certificate chains to anything. Cameras do not validate certificates.
+  #
+  # Ten years, because rotating it means reconfiguring the doorbell by hand and
+  # there is no automation that would notice an expiry.
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+      -keyout /tmp/ftps-key.pem -out /tmp/ftps-cert.pem \
+      -subj "/CN=xps.fritz.box" \
+      -addext "subjectAltName=DNS:xps.fritz.box"
+    cat /tmp/ftps-cert.pem /tmp/ftps-key.pem > /mnt/storage/config/ftp/ssl/pure-ftpd.pem
+    rm -f /tmp/ftps-key.pem /tmp/ftps-cert.pem
+    chmod 600 /mnt/storage/config/ftp/ssl/pure-ftpd.pem
+  args:
+    executable: /bin/bash
+    creates: /mnt/storage/config/ftp/ssl/pure-ftpd.pem
+
 - name: Pull FTP server Docker image
   community.docker.docker_image_pull:
-    name: "fauria/vsftpd:latest@sha256:6d71d7c7f1b0ab2844ec7dc7999a30aef6d758b6d8179cf5967513f87c79c177"
+    name: "stilliard/pure-ftpd:trixie-1.0.50@sha256:83fdc47e6b912a16aa2bbb30c9f577af64705331acbf7d87ab83aabfa4701089"
     pull: not_present
 
 - name: Start FTP container
   community.docker.docker_container:
     name: ftp_server
-    image: "fauria/vsftpd:latest@sha256:6d71d7c7f1b0ab2844ec7dc7999a30aef6d758b6d8179cf5967513f87c79c177"
+    image: "stilliard/pure-ftpd:trixie-1.0.50@sha256:83fdc47e6b912a16aa2bbb30c9f577af64705331acbf7d87ab83aabfa4701089"
     labels:
-      # Checked, but nothing will ever be found: this repository publishes
-      # only the `latest` tag, so there is no newer version tag that could
-      # exist. Left enabled so the image is not silently forgotten, and
-      # because a version tag appearing would itself be worth hearing about.
-      # The image was last pushed in January 2023.
       imagewatch.enable: "true"
+      imagewatch.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
     ports:
       - "21:21"
+      # Passive mode is not used by the doorbell today — the previous server had
+      # it disabled outright, so active mode is proven to work with this camera.
+      # The range is published anyway because pure-ftpd, unlike the old
+      # configuration, will happily agree to PASV if a client asks; without
+      # published ports that negotiation would succeed and then hang. Ten ports
+      # is ample for one camera.
+      - "30000-30009:30000-30009"
     volumes:
-      - "/mnt/storage/ftp/data:/home/vsftpd"
+      # Mounted at the user's home so the existing 89 GB is exactly where the
+      # camera expects it. The previous image mounted the parent and derived the
+      # home from the username; this one takes the home directly.
+      - "/mnt/storage/ftp/data/ftpuser:/home/ftpusers/ftpuser"
+      - "/mnt/storage/config/ftp/ssl:/etc/ssl/private:ro"
     env:
-      FTP_USER: ftpuser
-      FTP_PASS: "{{ ftp_password }}"
-      PASV_ENABLE: "NO"
-      WRITE_ENABLE: "YES"
-      ANONYMOUS_ENABLE: "NO"
-      FILE_OPEN_MODE: "0660"
-      LOCAL_UMASK: "007"
+      FTP_USER_NAME: ftpuser
+      FTP_USER_PASS: "{{ ftp_password }}"
+      FTP_USER_HOME: /home/ftpusers/ftpuser
+      # Pinned to match the 54,000 files already on disk. The previous image
+      # happened to use these; letting the new one pick its own would leave
+      # every existing file unreadable to the FTP user and every new file
+      # unreadable to daniel.
+      FTP_USER_UID: "14"
+      FTP_USER_GID: "50"
+      FTP_PASSIVE_PORTS: "30000:30009"
+      PUBLICHOST: "xps.fritz.box"
+      # --tls=1 permits both plain FTP and FTPS. This is deliberately the
+      # permissive setting for now: the doorbell must be confirmed to actually
+      # negotiate TLS before it is tightened to --tls=2, which refuses
+      # unencrypted connections. Going straight to 2 risks the camera silently
+      # failing to upload, which nothing would notice until footage was wanted.
+      ADDED_FLAGS: "--tls=1"
     state: started
     restart_policy: always
