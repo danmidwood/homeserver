@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# Browse and play Reolink doorbell clips held on the server.
+#
+# This runs on the laptop, not the server, and changes nothing on either. It
+# lists over SSH and fetches clips with scp, so it uses your normal SSH key and
+# agent.
+#
+# It deliberately does NOT hand sftp:// URLs to VLC. VLC 3.0.8 bundles a libssh2
+# too old to authenticate with an ed25519 key, so it hangs on a prompt that
+# never appears. Fetching first also makes clips seekable, and at ~3 MB each
+# that costs nothing.
+#
+#   doorbell                      today's events
+#   doorbell yesterday            yesterday's
+#   doorbell 2026-08-22           a specific day
+#   doorbell -3                   three days ago
+#   doorbell 2026-08-22 15:30     play the clip nearest that time
+#   doorbell yesterday --all      fetch and queue the whole day
+#   doorbell 2026-08-22 15:30 --dry-run   show the match without playing
+#
+# Clips are cached under ~/.cache/doorbell, so replaying one is instant.
+
+# No `set -u`: macOS ships bash 3.2, where referencing an empty array under
+# `set -u` is itself an error. Every variable below has an explicit default.
+set -o pipefail
+
+HOST="${DOORBELL_HOST:-daniel@xps.fritz.box}"
+ROOT="${DOORBELL_ROOT:-/mnt/storage/ftp/data/ftpuser}"
+CACHE="${DOORBELL_CACHE:-$HOME/.cache/doorbell}"
+VLC_APP="${DOORBELL_VLC_APP:-/Applications/VLC.app}"
+
+die() { echo "doorbell: $*" >&2; exit 1; }
+
+usage() {
+  sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//'
+  exit 0
+}
+
+# Accepts YYYY-MM-DD, today, yesterday, or -N for N days ago.
+resolve_date() {
+  case "$1" in
+    today|"")   date +%Y-%m-%d ;;
+    yesterday)  date -v-1d +%Y-%m-%d 2>/dev/null || date -d yesterday +%Y-%m-%d ;;
+    -[0-9]*)    local n=${1#-}
+                date -v-"${n}"d +%Y-%m-%d 2>/dev/null || date -d "${n} days ago" +%Y-%m-%d ;;
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) echo "$1" ;;
+    *)          die "unrecognised date: $1 (use YYYY-MM-DD, today, yesterday, or -N)" ;;
+  esac
+}
+
+# The archive changed layout partway through its life: older clips live in
+# YYYY/MM/ and newer ones in YYYY/MM/DD/. Searching the month directory by
+# filename covers both, because the timestamp is in the name either way.
+list_clips() {
+  local ymd="$1" y="${1:0:4}" m="${1:5:2}" compact="${1//-/}"
+  ssh -o ConnectTimeout=20 "$HOST" \
+    "find '${ROOT}/${y}/${m}' -type f -iname '*${compact}*.mp4' 2>/dev/null | sort"
+}
+
+# 20260822231237 -> 23:12:37
+time_of() {
+  local base ts
+  base=$(basename "$1" .mp4)
+  ts="${base##*_}"
+  echo "${ts:8:2}:${ts:10:2}:${ts:12:2}"
+}
+
+seconds_of() {
+  local base ts
+  base=$(basename "$1" .mp4)
+  ts="${base##*_}"
+  echo $(( 10#${ts:8:2} * 3600 + 10#${ts:10:2} * 60 + 10#${ts:12:2} ))
+}
+
+fetch() {
+  local remote="$1" ymd="$2" dest
+  dest="${CACHE}/${ymd}/$(basename "$remote")"
+  if [ ! -f "$dest" ]; then
+    mkdir -p "$(dirname "$dest")"
+    # printf %q quotes the remote path for the remote shell, which scp invokes.
+    # Every one of these filenames contains spaces, so without it scp treats
+    # "Reolink", "Video" and "Doorbell_00_....mp4" as three separate sources.
+    scp -q -o ConnectTimeout=20 "${HOST}:$(printf '%q' "$remote")" "$dest" \
+      || { rm -f "$dest"; die "could not fetch $(basename "$remote")"; }
+  fi
+  echo "$dest"
+}
+
+# ---------------------------------------------------------------------------
+
+case "${1:-}" in -h|--help|help) usage ;; esac
+
+DATE_ARG="${1:-today}"
+shift || true
+
+WANT_TIME=""
+PLAY_ALL=0
+DRY_RUN=0
+for arg in "$@"; do
+  case "$arg" in
+    --all) PLAY_ALL=1 ;;
+    --dry-run) DRY_RUN=1 ;;
+    [0-9][0-9]:[0-9][0-9]) WANT_TIME="$arg" ;;
+    [0-9][0-9]:[0-9][0-9]:[0-9][0-9]) WANT_TIME="$arg" ;;
+    *) die "unrecognised argument: $arg" ;;
+  esac
+done
+
+YMD=$(resolve_date "$DATE_ARG") || exit 1
+
+# Read into an array the long way: bash 3.2 has no mapfile.
+CLIPS=()
+while IFS= read -r line; do
+  [ -n "$line" ] && CLIPS[${#CLIPS[@]}]="$line"
+done < <(list_clips "$YMD")
+[ "${#CLIPS[@]}" -eq 0 ] && { echo "No clips for ${YMD}."; exit 0; }
+
+# --- list -------------------------------------------------------------------
+if [ -z "$WANT_TIME" ] && [ "$PLAY_ALL" -eq 0 ]; then
+  echo "${YMD} — ${#CLIPS[@]} events"
+  for c in "${CLIPS[@]}"; do
+    printf '  %s  %s\n' "$(time_of "$c")" "$(basename "$c")"
+  done
+  echo
+  echo "play one:  doorbell ${YMD} HH:MM"
+  echo "play all:  doorbell ${YMD} --all"
+  exit 0
+fi
+
+[ -d "$VLC_APP" ] || die "VLC not found at $VLC_APP (set DOORBELL_VLC_APP)"
+
+# --- whole day --------------------------------------------------------------
+if [ "$PLAY_ALL" -eq 1 ]; then
+  echo "Fetching ${#CLIPS[@]} clips for ${YMD}..."
+  LOCAL_FILES=()
+  for c in "${CLIPS[@]}"; do
+    LOCAL_FILES[${#LOCAL_FILES[@]}]="$(fetch "$c" "$YMD")"
+    printf '\r  %d/%d' "${#LOCAL_FILES[@]}" "${#CLIPS[@]}"
+  done
+  echo
+  open -a "$VLC_APP" "${LOCAL_FILES[@]}"
+  exit 0
+fi
+
+# --- nearest to a time ------------------------------------------------------
+h="${WANT_TIME%%:*}"; rest="${WANT_TIME#*:}"; mi="${rest%%:*}"
+s="${WANT_TIME##*:}"; [ "$s" = "$WANT_TIME" ] && s=0
+target=$(( 10#$h * 3600 + 10#$mi * 60 + 10#$s ))
+
+best=""; best_delta=999999
+for c in "${CLIPS[@]}"; do
+  d=$(( $(seconds_of "$c") - target )); [ "$d" -lt 0 ] && d=$(( -d ))
+  if [ "$d" -lt "$best_delta" ]; then best_delta=$d; best="$c"; fi
+done
+
+printf 'Nearest to %s is %s (%dm away)\n' "$WANT_TIME" "$(time_of "$best")" "$(( best_delta / 60 ))"
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "would play: $best"
+  exit 0
+fi
+open -a "$VLC_APP" "$(fetch "$best" "$YMD")"
