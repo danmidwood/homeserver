@@ -90,11 +90,11 @@
       FTP_USER_GID: "50"
       FTP_PASSIVE_PORTS: "30000:30009"
       PUBLICHOST: "xps.fritz.box"
-      # --tls=1 permits both plain FTP and FTPS. This is deliberately the
-      # permissive setting for now: the doorbell must be confirmed to actually
-      # negotiate TLS before it is tightened to --tls=2, which refuses
-      # unencrypted connections. Going straight to 2 risks the camera silently
-      # failing to upload, which nothing would notice until footage was wanted.
-      ADDED_FLAGS: "--tls=1"
+      # --tls=2 refuses unencrypted connections outright. Safe to require here
+      # because the doorbell was confirmed to negotiate TLS first: it was
+      # switched to FTPS in the Reolink app and its test upload landed, so
+      # enforcing encryption cannot silently strand it. The credential no
+      # longer crosses the LAN in clear text.
+      ADDED_FLAGS: "--tls=2"
     state: started
     restart_policy: always
