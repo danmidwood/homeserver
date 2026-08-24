@@ -19,6 +19,10 @@
 #   doorbell 2026-08-22 15:30 --dry-run   show the match without playing
 #
 # Clips are cached under ~/.cache/doorbell, so replaying one is instant.
+#
+# Listings show duration and size. Durations come from ffprobe on the server;
+# a clip that will not probe is a zero-byte failed upload, of which there are
+# about 120 in the archive, and those are marked and skipped when playing.
 
 # No `set -u`: macOS ships bash 3.2, where referencing an empty array under
 # `set -u` is itself an error. Every variable below has an explicit default.
@@ -51,10 +55,27 @@ resolve_date() {
 # The archive changed layout partway through its life: older clips live in
 # YYYY/MM/ and newer ones in YYYY/MM/DD/. Searching the month directory by
 # filename covers both, because the timestamp is in the name either way.
+#
+# Emits one tab-separated record per clip: path, size in bytes, duration in
+# seconds. Durations come from ffprobe on the server, run four at a time --
+# serially a busy day takes six seconds, in parallel a little over two, which is
+# the difference between a listing that feels instant and one that does not.
 list_clips() {
-  local ymd="$1" y="${1:0:4}" m="${1:5:2}" compact="${1//-/}"
-  ssh -o ConnectTimeout=20 "$HOST" \
-    "find '${ROOT}/${y}/${m}' -type f -iname '*${compact}*.mp4' 2>/dev/null | sort"
+  local y="${1:0:4}" m="${1:5:2}" compact="${1//-/}"
+  ssh -o ConnectTimeout=30 "$HOST" bash -s <<REMOTE
+find '${ROOT}/${y}/${m}' -type f -iname '*${compact}*.mp4' -print0 2>/dev/null \
+  | xargs -0 -P 4 -I{} sh -c '
+      f="\$1"
+      s=\$(stat -c %s "\$f" 2>/dev/null || echo 0)
+      if [ "\$s" -gt 0 ]; then
+        d=\$(ffprobe -v error -show_entries format=duration -of csv=p=0 "\$f" 2>/dev/null)
+      else
+        d=""
+      fi
+      printf "%s\t%s\t%s\n" "\$f" "\$s" "\$d"
+    ' _ {} \
+  | sort
+REMOTE
 }
 
 # 20260822231237 -> 23:12:37
@@ -108,18 +129,46 @@ done
 
 YMD=$(resolve_date "$DATE_ARG") || exit 1
 
-# Read into an array the long way: bash 3.2 has no mapfile.
-CLIPS=()
-while IFS= read -r line; do
-  [ -n "$line" ] && CLIPS[${#CLIPS[@]}]="$line"
+# Each record is path<TAB>size<TAB>duration. Read the long way: bash 3.2 has
+# no mapfile.
+CLIPS=(); SIZES=(); DURS=()
+while IFS=$'\t' read -r rpath rsize rdur; do
+  [ -z "$rpath" ] && continue
+  CLIPS[${#CLIPS[@]}]="$rpath"
+  SIZES[${#SIZES[@]}]="$rsize"
+  DURS[${#DURS[@]}]="$rdur"
 done < <(list_clips "$YMD")
 [ "${#CLIPS[@]}" -eq 0 ] && { echo "No clips for ${YMD}."; exit 0; }
 
+# 2305462 -> "2.2 MB"
+human_size() {
+  awk -v b="$1" 'BEGIN { if (b < 1048576) printf "%d KB", b/1024; else printf "%.1f MB", b/1048576 }'
+}
+
+# 10.176000 -> "10s"; empty -> a marker, because a clip that will not probe is
+# a failed upload rather than a short one, and that is worth seeing in a list.
+human_dur() {
+  [ -z "$1" ] && { printf '     —'; return; }
+  awk -v d="$1" 'BEGIN { printf "%5.1fs", d }'
+}
+
 # --- list -------------------------------------------------------------------
 if [ -z "$WANT_TIME" ] && [ "$PLAY_ALL" -eq 0 ]; then
-  echo "${YMD} — ${#CLIPS[@]} events"
-  for c in "${CLIPS[@]}"; do
-    printf '  %s  %s\n' "$(time_of "$c")" "$(basename "$c")"
+  empty=0
+  for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
+    [ -z "${DURS[$i]}" ] && empty=$(( empty + 1 ))
+  done
+  if [ "$empty" -gt 0 ]; then
+    echo "${YMD} — ${#CLIPS[@]} events, ${empty} empty (failed uploads)"
+  else
+    echo "${YMD} — ${#CLIPS[@]} events"
+  fi
+  for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
+    printf '  %s  %s  %9s%s\n' \
+      "$(time_of "${CLIPS[$i]}")" \
+      "$(human_dur "${DURS[$i]}")" \
+      "$(human_size "${SIZES[$i]}")" \
+      "$([ -z "${DURS[$i]}" ] && echo '   empty upload')"
   done
   echo
   echo "play one:  doorbell ${YMD} HH:MM"
@@ -131,11 +180,22 @@ fi
 
 # --- whole day --------------------------------------------------------------
 if [ "$PLAY_ALL" -eq 1 ]; then
-  echo "Fetching ${#CLIPS[@]} clips for ${YMD}..."
+  PLAYABLE=()
+  for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
+    [ -n "${DURS[$i]}" ] && PLAYABLE[${#PLAYABLE[@]}]="${CLIPS[$i]}"
+  done
+  [ "${#PLAYABLE[@]}" -eq 0 ] && die "no playable clips on ${YMD}"
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "would fetch and queue ${#PLAYABLE[@]} clips ($(( ${#CLIPS[@]} - ${#PLAYABLE[@]} )) empty, skipped)"
+    exit 0
+  fi
+
+  echo "Fetching ${#PLAYABLE[@]} clips for ${YMD} ($(( ${#CLIPS[@]} - ${#PLAYABLE[@]} )) empty, skipped)..."
   LOCAL_FILES=()
-  for c in "${CLIPS[@]}"; do
+  for c in "${PLAYABLE[@]}"; do
     LOCAL_FILES[${#LOCAL_FILES[@]}]="$(fetch "$c" "$YMD")"
-    printf '\r  %d/%d' "${#LOCAL_FILES[@]}" "${#CLIPS[@]}"
+    printf '\r  %d/%d' "${#LOCAL_FILES[@]}" "${#PLAYABLE[@]}"
   done
   echo
   open -a "$VLC_APP" "${LOCAL_FILES[@]}"
@@ -144,14 +204,26 @@ fi
 
 # --- nearest to a time ------------------------------------------------------
 h="${WANT_TIME%%:*}"; rest="${WANT_TIME#*:}"; mi="${rest%%:*}"
-s="${WANT_TIME##*:}"; [ "$s" = "$WANT_TIME" ] && s=0
+# Count the colons rather than comparing the tail to the whole string. The
+# previous test never fired for HH:MM, because ${WANT_TIME##*:} returns the
+# MINUTES in that case rather than the original -- so "15:50" was silently
+# treated as 15:50:50 and could pick the wrong clip.
+case "$WANT_TIME" in
+  *:*:*) s="${WANT_TIME##*:}" ;;
+  *)     s=0 ;;
+esac
 target=$(( 10#$h * 3600 + 10#$mi * 60 + 10#$s ))
 
-best=""; best_delta=999999
-for c in "${CLIPS[@]}"; do
+# Empty clips are skipped: a failed upload is never what someone is looking
+# for, and opening a zero-byte file in VLC just produces an error.
+best=""; best_delta=999999; skipped=0
+for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
+  if [ -z "${DURS[$i]}" ]; then skipped=$(( skipped + 1 )); continue; fi
+  c="${CLIPS[$i]}"
   d=$(( $(seconds_of "$c") - target )); [ "$d" -lt 0 ] && d=$(( -d ))
   if [ "$d" -lt "$best_delta" ]; then best_delta=$d; best="$c"; fi
 done
+[ -z "$best" ] && die "no playable clip on ${YMD} (${skipped} empty upload(s))"
 
 printf 'Nearest to %s is %s (%dm away)\n' "$WANT_TIME" "$(time_of "$best")" "$(( best_delta / 60 ))"
 if [ "$DRY_RUN" -eq 1 ]; then

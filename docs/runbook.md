@@ -247,9 +247,14 @@ broken.
 
 **Review doorbell footage**
 ```bash
-./tools/doorbell yesterday
-./tools/doorbell 2026-08-22 15:30
+./tools/doorbell yesterday          # listing with duration and size
+./tools/doorbell 2026-08-22 15:30   # play the nearest clip
+./tools/doorbell yesterday --all    # fetch and queue the day
 ```
+Roughly one upload in 450 arrives as a zero-byte file — the camera aborting
+mid-transfer, which predates the move to pure-ftpd and continues at the same
+rate after it. Those are marked `empty upload` in listings and skipped when
+choosing something to play.
 
 **Run the tests**
 ```bash
