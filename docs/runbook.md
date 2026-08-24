@@ -248,9 +248,17 @@ broken.
 **Review doorbell footage**
 ```bash
 ./tools/doorbell yesterday          # listing with duration and size
+./tools/doorbell yesterday --long   # only clips 8s or longer
 ./tools/doorbell 2026-08-22 15:30   # play the nearest clip
 ./tools/doorbell yesterday --all    # fetch and queue the day
+./tools/doorbell yesterday --long --all
+./tools/doorbell yesterday --min 12 # an explicit threshold
 ```
+Clip lengths are bimodal: a large spike at two to four seconds, a trough at six
+to eight, and a second population from eight upwards. The short clips are
+motion crossing the frame; the longer ones are where something actually
+happened. `--long` uses eight seconds for that reason and keeps roughly a
+quarter of clips.
 Roughly one upload in 450 arrives as a zero-byte file — the camera aborting
 mid-transfer, which predates the move to pure-ftpd and continues at the same
 rate after it. Those are marked `empty upload` in listings and skipped when

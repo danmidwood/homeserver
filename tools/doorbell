@@ -16,13 +16,24 @@
 #   doorbell -3                   three days ago
 #   doorbell 2026-08-22 15:30     play the clip nearest that time
 #   doorbell yesterday --all      fetch and queue the whole day
+#   doorbell yesterday --long     only clips likely to show something
+#   doorbell yesterday --long --all
+#   doorbell yesterday --min 12   an explicit threshold in seconds
 #   doorbell 2026-08-22 15:30 --dry-run   show the match without playing
 #
 # Clips are cached under ~/.cache/doorbell, so replaying one is instant.
 #
+# --long filters to clips of at least eight seconds. That threshold is not
+# arbitrary: clip lengths are bimodal, with a large spike at two to four seconds
+# and a second population from eight upwards, and the trough between them sits
+# at six to eight. The short spike is motion crossing the frame; the longer
+# clips are where something actually happened. Roughly a quarter of clips
+# survive the filter.
+#
 # Listings show duration and size. Durations come from ffprobe on the server;
-# a clip that will not probe is a zero-byte failed upload, of which there are
-# about 120 in the archive, and those are marked and skipped when playing.
+# a clip that will not probe is a failed upload -- either zero bytes, or
+# truncated part-way. Around 6% of recent clips are one or the other. They are
+# labelled in listings and never selected for playing.
 
 # No `set -u`: macOS ships bash 3.2, where referencing an empty array under
 # `set -u` is itself an error. Every variable below has an explicit default.
@@ -32,6 +43,7 @@ HOST="${DOORBELL_HOST:-daniel@xps.fritz.box}"
 ROOT="${DOORBELL_ROOT:-/mnt/storage/ftp/data/ftpuser}"
 CACHE="${DOORBELL_CACHE:-$HOME/.cache/doorbell}"
 VLC_APP="${DOORBELL_VLC_APP:-/Applications/VLC.app}"
+LONG_SECONDS="${DOORBELL_LONG_SECONDS:-8}"
 
 die() { echo "doorbell: $*" >&2; exit 1; }
 
@@ -67,10 +79,15 @@ find '${ROOT}/${y}/${m}' -type f -iname '*${compact}*.mp4' -print0 2>/dev/null \
   | xargs -0 -P 4 -I{} sh -c '
       f="\$1"
       s=\$(stat -c %s "\$f" 2>/dev/null || echo 0)
+      d=""
       if [ "\$s" -gt 0 ]; then
         d=\$(ffprobe -v error -show_entries format=duration -of csv=p=0 "\$f" 2>/dev/null)
-      else
-        d=""
+        # ffprobe prints N/A for a file it can open but cannot measure, which
+        # is what a truncated upload looks like. Normalised to empty here so
+        # everything downstream treats it as unusable -- and because awk
+        # compares a non-numeric string against a number lexically, where
+        # "N/A" > "12", so an unnormalised N/A passes every threshold.
+        case "\$d" in ""|N/A) d="" ;; esac
       fi
       printf "%s\t%s\t%s\n" "\$f" "\$s" "\$d"
     ' _ {} \
@@ -117,15 +134,26 @@ shift || true
 WANT_TIME=""
 PLAY_ALL=0
 DRY_RUN=0
+MIN_DUR=0
+expect_min=0
 for arg in "$@"; do
+  if [ "$expect_min" -eq 1 ]; then
+    case "$arg" in
+      ''|*[!0-9.]*) die "--min needs a number of seconds, got: $arg" ;;
+      *) MIN_DUR="$arg"; expect_min=0; continue ;;
+    esac
+  fi
   case "$arg" in
     --all) PLAY_ALL=1 ;;
     --dry-run) DRY_RUN=1 ;;
+    --long) MIN_DUR="$LONG_SECONDS" ;;
+    --min) expect_min=1 ;;
     [0-9][0-9]:[0-9][0-9]) WANT_TIME="$arg" ;;
     [0-9][0-9]:[0-9][0-9]:[0-9][0-9]) WANT_TIME="$arg" ;;
     *) die "unrecognised argument: $arg" ;;
   esac
 done
+[ "$expect_min" -eq 1 ] && die "--min needs a number of seconds"
 
 YMD=$(resolve_date "$DATE_ARG") || exit 1
 
@@ -152,27 +180,65 @@ human_dur() {
   awk -v d="$1" 'BEGIN { printf "%5.1fs", d }'
 }
 
+# Two distinct failure modes, worth telling apart: a file that never received
+# any bytes, and one that received some and stopped. Both are unplayable, but
+# they suggest different things about where the upload broke.
+bad_label() {
+  local size="$1" dur="$2"
+  [ -n "$dur" ] && return 0
+  if [ "$size" -eq 0 ] 2>/dev/null; then printf '   empty upload'
+  else printf '   truncated'
+  fi
+}
+
+# True when a clip meets the duration threshold. Empty and truncated uploads
+# have no duration and so never qualify, which is what we want -- they are the
+# least interesting thing in the archive.
+meets_min() {
+  local dur="$1"
+  [ "$MIN_DUR" = "0" ] && return 0
+  # Anything not strictly numeric fails, rather than being handed to awk, which
+  # would compare it as a string against the threshold and let it through.
+  case "$dur" in
+    ''|*[!0-9.]*) return 1 ;;
+  esac
+  awk -v d="$dur" -v m="$MIN_DUR" 'BEGIN { exit !(d + 0 >= m + 0) }'
+}
+
 # --- list -------------------------------------------------------------------
 if [ -z "$WANT_TIME" ] && [ "$PLAY_ALL" -eq 0 ]; then
-  empty=0
+  empty=0; shown=0
   for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
     [ -z "${DURS[$i]}" ] && empty=$(( empty + 1 ))
   done
-  if [ "$empty" -gt 0 ]; then
-    echo "${YMD} — ${#CLIPS[@]} events, ${empty} empty (failed uploads)"
+
+  if [ "$MIN_DUR" != "0" ]; then
+    for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
+      meets_min "${DURS[$i]}" && shown=$(( shown + 1 ))
+    done
+    echo "${YMD} — ${shown} of ${#CLIPS[@]} events at ${MIN_DUR}s or longer"
+  elif [ "$empty" -gt 0 ]; then
+    echo "${YMD} — ${#CLIPS[@]} events, ${empty} unplayable (empty or truncated)"
   else
     echo "${YMD} — ${#CLIPS[@]} events"
   fi
+
   for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
+    meets_min "${DURS[$i]}" || continue
     printf '  %s  %s  %9s%s\n' \
       "$(time_of "${CLIPS[$i]}")" \
       "$(human_dur "${DURS[$i]}")" \
       "$(human_size "${SIZES[$i]}")" \
-      "$([ -z "${DURS[$i]}" ] && echo '   empty upload')"
+      "$(bad_label "${SIZES[$i]}" "${DURS[$i]}")"
   done
   echo
   echo "play one:  doorbell ${YMD} HH:MM"
-  echo "play all:  doorbell ${YMD} --all"
+  if [ "$MIN_DUR" != "0" ]; then
+    echo "play these: doorbell ${YMD} --min ${MIN_DUR} --all"
+  else
+    echo "play all:  doorbell ${YMD} --all"
+    echo "longer only: doorbell ${YMD} --long"
+  fi
   exit 0
 fi
 
@@ -182,16 +248,21 @@ fi
 if [ "$PLAY_ALL" -eq 1 ]; then
   PLAYABLE=()
   for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
-    [ -n "${DURS[$i]}" ] && PLAYABLE[${#PLAYABLE[@]}]="${CLIPS[$i]}"
+    [ -z "${DURS[$i]}" ] && continue
+    meets_min "${DURS[$i]}" || continue
+    PLAYABLE[${#PLAYABLE[@]}]="${CLIPS[$i]}"
   done
-  [ "${#PLAYABLE[@]}" -eq 0 ] && die "no playable clips on ${YMD}"
+  if [ "${#PLAYABLE[@]}" -eq 0 ]; then
+    [ "$MIN_DUR" != "0" ] && die "no clips on ${YMD} are ${MIN_DUR}s or longer"
+    die "no playable clips on ${YMD}"
+  fi
 
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "would fetch and queue ${#PLAYABLE[@]} clips ($(( ${#CLIPS[@]} - ${#PLAYABLE[@]} )) empty, skipped)"
+    echo "would fetch and queue ${#PLAYABLE[@]} of ${#CLIPS[@]} clips"
     exit 0
   fi
 
-  echo "Fetching ${#PLAYABLE[@]} clips for ${YMD} ($(( ${#CLIPS[@]} - ${#PLAYABLE[@]} )) empty, skipped)..."
+  echo "Fetching ${#PLAYABLE[@]} of ${#CLIPS[@]} clips for ${YMD}..."
   LOCAL_FILES=()
   for c in "${PLAYABLE[@]}"; do
     LOCAL_FILES[${#LOCAL_FILES[@]}]="$(fetch "$c" "$YMD")"
