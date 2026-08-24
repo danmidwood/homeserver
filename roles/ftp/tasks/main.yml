@@ -1,3 +1,13 @@
+- name: Make the doorbell archive group-readable but not group-writable
+  # The camera writes as uid 14, which OWNS this tree, so group write was never
+  # needed. Removing it lets the Telegram bot join the group and read clips
+  # without also being able to delete 89 GB of footage that has no backup.
+  ansible.builtin.file:
+    path: /mnt/storage/ftp/data/ftpuser
+    state: directory
+    mode: 'g-w'
+    recurse: false
+
 - name: Create FTP data directory
   file:
     path: /mnt/storage/ftp/data

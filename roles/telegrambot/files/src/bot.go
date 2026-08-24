@@ -35,6 +35,7 @@ func (b *Bot) help() string {
 	sb.WriteString("/status — containers, disk, backup age, firing alerts\n")
 	sb.WriteString("/backup_now — start a backup now\n")
 	sb.WriteString("/restart &lt;service&gt; — restart one app container\n")
+	sb.WriteString("/doorbell [today|yesterday|YYYY-MM-DD] [all] — doorbell clips\n")
 	sb.WriteString("/help — this message\n\n")
 	sb.WriteString("Send a photo or a document to save it to the inbox (20 MB limit).\n\n")
 
@@ -90,6 +91,8 @@ func (b *Bot) Handle(ctx context.Context, m *Message) string {
 		return b.backupNow(ctx)
 	case "/restart":
 		return b.restart(ctx, arg)
+	case "/doorbell":
+		return b.doorbell(ctx, m.Chat.ID, arg)
 	case "/help", "/start":
 		return b.help()
 	default:
@@ -155,6 +158,9 @@ func (b *Bot) Poll(ctx context.Context) {
 		backoff = time.Second
 
 		for _, u := range updates {
+			if u.Callback != nil {
+				b.handleCallback(ctx, u.Callback)
+			}
 			if u.Message != nil {
 				if b.authorized(u.Message) {
 					if reply := b.Handle(ctx, u.Message); reply != "" {
@@ -178,6 +184,50 @@ func (b *Bot) Poll(ctx context.Context) {
 			if err := saveOffset(b.StateFile, offset); err != nil {
 				log.Printf("saving offset: %v", err)
 			}
+		}
+	}
+}
+
+// handleCallback deals with an inline keyboard press.
+//
+// The same authorisation check as messages applies: a callback carries its own
+// sender, and Telegram will happily deliver one from anybody who can see the
+// message.
+func (b *Bot) handleCallback(ctx context.Context, cb *CallbackQuery) {
+	if cb.From == nil || b.AllowedUserID == 0 || cb.From.ID != b.AllowedUserID {
+		var id int64
+		if cb.From != nil {
+			id = cb.From.ID
+		}
+		log.Printf("ignoring callback from unauthorised user id %d", id)
+		return
+	}
+
+	// Answered first, and always. Telegram spins the button until this returns,
+	// so answering only on success makes a slow upload look like a hang.
+	if err := b.TG.AnswerCallback(ctx, cb.ID, ""); err != nil {
+		log.Printf("answerCallbackQuery: %v", err)
+	}
+
+	var chatID int64
+	if cb.Message != nil && cb.Message.Chat != nil {
+		chatID = cb.Message.Chat.ID
+	}
+	if chatID == 0 {
+		log.Printf("callback with no chat to reply to")
+		return
+	}
+
+	var reply string
+	switch {
+	case strings.HasPrefix(cb.Data, "p:"):
+		reply = b.playClip(ctx, chatID, strings.TrimPrefix(cb.Data, "p:"))
+	default:
+		reply = "Unrecognised button."
+	}
+	if reply != "" {
+		if err := b.TG.SendMessage(ctx, chatID, reply); err != nil {
+			log.Printf("sendMessage: %v", err)
 		}
 	}
 }

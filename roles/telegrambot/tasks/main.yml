@@ -12,6 +12,16 @@
     name: go
     state: present
 
+- name: Ensure ffmpeg is installed
+  # ffprobe measures clip length, so the short motion-only clips can be
+  # filtered out. The contact sheet is composed in Go rather than by
+  # ImageMagick: installing it here failed with 404s across every mirror
+  # because the package database was stale, and the fix for that is a full
+  # system upgrade, which is not something a bot feature should require.
+  ansible.builtin.package:
+    name: ffmpeg
+    state: present
+
 - name: Create the telegrambot system user
   # No shell and no home. Deliberately NOT in the docker group: socket access
   # is equivalent to root, and this service takes instructions from the
@@ -22,6 +32,12 @@
     shell: /usr/sbin/nologin
     create_home: false
     home: /var/lib/telegram-bot
+    # `games` is gid 50, which is what the Debian-based FTP container writes
+    # as; on Arch that gid is named games. Membership is read-only in effect,
+    # because the archive directory has group write removed -- it lets the bot
+    # read doorbell clips and nothing more. Still deliberately NOT in `docker`.
+    groups: games
+    append: true
 
 - name: Create the bot state directory
   ansible.builtin.file:

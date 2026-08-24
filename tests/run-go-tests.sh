@@ -10,7 +10,10 @@ echo "==> go vet"
 (cd "$SRC" && GOPROXY=off go vet ./...)
 
 echo "==> go test"
-(cd "$SRC" && GOPROXY=off go test ./...)
+# -count=1 defeats the build cache. Without it a mutation-tested change can
+# report a cached pass from before the edit, which looks exactly like a test
+# that failed to catch the bug.
+(cd "$SRC" && GOPROXY=off go test -count=1 ./...)
 
 echo "==> confirming there are no third-party dependencies"
 if grep -q "^require" "$SRC/go.mod"; then

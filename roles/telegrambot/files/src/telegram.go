@@ -51,9 +51,20 @@ type Message struct {
 	Photo     []PhotoSize `json:"photo"`
 }
 
+// CallbackQuery arrives when an inline keyboard button is pressed. It is not a
+// message, which is why the bot has to ask Telegram for this update type
+// explicitly -- without it, button presses simply never appear.
+type CallbackQuery struct {
+	ID      string   `json:"id"`
+	From    *User    `json:"from"`
+	Data    string   `json:"data"`
+	Message *Message `json:"message"`
+}
+
 type Update struct {
-	UpdateID int      `json:"update_id"`
-	Message  *Message `json:"message"`
+	UpdateID int            `json:"update_id"`
+	Message  *Message       `json:"message"`
+	Callback *CallbackQuery `json:"callback_query"`
 }
 
 type apiResponse struct {
@@ -92,9 +103,9 @@ func (c *Client) GetUpdates(ctx context.Context, offset, timeoutSec int) ([]Upda
 	form := url.Values{}
 	form.Set("offset", strconv.Itoa(offset))
 	form.Set("timeout", strconv.Itoa(timeoutSec))
-	// Only message updates are of interest; asking for less means Telegram sends
-	// less.
-	form.Set("allowed_updates", `["message"]`)
+	// Messages and button presses. Anything not listed here is never delivered,
+	// so a missing entry looks exactly like a bot that ignores you.
+	form.Set("allowed_updates", `["message","callback_query"]`)
 
 	raw, err := c.call(ctx, "getUpdates", form)
 	if err != nil {
