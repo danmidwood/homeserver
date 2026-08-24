@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Explain a load, temperature or memory spike on the server.
+#
+# Answers "what was the machine doing at 23:00 last night" by asking Prometheus,
+# which has been recording per-container CPU and memory all along. Much faster
+# than reading journals, and it works for any moment still inside Prometheus's
+# retention rather than only for things that happened to log something.
+#
+#   whatspiked                      the worst load spike in the last 24 hours
+#   whatspiked 23:00                that time today
+#   whatspiked "2026-08-23 22:58"   a specific moment
+#
+# Runs on the laptop and reads over SSH. Prometheus is bound to loopback on the
+# server, so it cannot be queried directly from here.
+
+set -o pipefail
+
+HOST="${WHATSPIKED_HOST:-daniel@xps.fritz.box}"
+
+die() { echo "whatspiked: $*" >&2; exit 1; }
+
+# Everything runs in one SSH call: a dozen round trips would be slower than the
+# queries themselves.
+remote() {
+  ssh -o ConnectTimeout=20 "$HOST" "WHEN='$1' bash -s" <<'REMOTE'
+set -o pipefail
+P=http://localhost:9090/api/v1
+
+q()  { curl -s --get "$P/query"       --data-urlencode "query=$1" --data-urlencode "time=$2"; }
+qr() { curl -s --get "$P/query_range" --data-urlencode "query=$1" \
+         --data-urlencode "start=$2" --data-urlencode "end=$3" --data-urlencode "step=$4"; }
+
+if [ -z "$WHEN" ]; then
+  # Find the worst minute of load in the last 24 hours and explain that.
+  END=$(date +%s); START=$((END - 86400))
+  T=$(qr 'node_load1' "$START" "$END" 300 \
+      | jq -r '.data.result[0].values | max_by(.[1]|tonumber) | .[0]' 2>/dev/null)
+  [ -z "$T" ] || [ "$T" = "null" ] && { echo "No load data in the last 24 hours."; exit 1; }
+  echo "Worst load in the last 24h was at $(date -d "@$T" '+%Y-%m-%d %H:%M %Z')"
+else
+  T=$(date -d "$WHEN" +%s 2>/dev/null) || { echo "Could not parse time: $WHEN" >&2; exit 1; }
+  echo "At $(date -d "@$T" '+%Y-%m-%d %H:%M %Z')"
+fi
+BASE=$((T - 3600))
+
+fmt_pct() { jq -r '.data.result[]? | "  \(.metric.name // "?")|\((.value[1]|tonumber*100)|floor)"' ; }
+
+echo
+echo "── host ──"
+printf '  load        %s\n' "$(q 'node_load1' "$T" | jq -r '.data.result[0].value[1] // "n/a"')"
+printf '  cpu temp    %s C\n' "$(q 'max(node_hwmon_temp_celsius)' "$T" | jq -r '(.data.result[0].value[1] // "n/a") | if . == "n/a" then . else (tonumber|floor) end')"
+printf '  mem used    %s%%\n' "$(q '100*(1-node_memory_MemAvailable_bytes/node_memory_MemTotal_bytes)' "$T" | jq -r '(.data.result[0].value[1] // "n/a") | if . == "n/a" then . else (tonumber|floor) end')"
+
+echo
+echo "── busiest containers (percent of one core) ──"
+q 'topk(6, rate(container_cpu_usage_seconds_total{name!=""}[5m]))' "$T" \
+  | fmt_pct | while IFS='|' read -r n v; do printf '%-28s %s%%\n' "$n" "$v"; done
+
+echo
+echo "── the same, one hour earlier, as a baseline ──"
+q 'topk(4, rate(container_cpu_usage_seconds_total{name!=""}[5m]))' "$BASE" \
+  | fmt_pct | while IFS='|' read -r n v; do printf '%-28s %s%%\n' "$n" "$v"; done
+
+echo
+echo "── memory, top consumers ──"
+q 'topk(4, container_memory_usage_bytes{name!=""})' "$T" \
+  | jq -r '.data.result[]? | "  \(.metric.name // "?")|\((.value[1]|tonumber/1073741824)*10|floor/10)"' \
+  | while IFS='|' read -r n v; do printf '%-28s %s GB\n' "$n" "$v"; done
+
+echo
+echo "── scheduled work that started nearby ──"
+journalctl --since "@$((T - 900))" --until "@$((T + 300))" --no-pager -o short-iso 2>/dev/null \
+  | grep -E "Starting |Started " \
+  | grep -viE "session|logind|sudo|user@|dbus" \
+  | sed -E 's/^[^ ]+ [^ ]+ [^:]*: *//' | sort -u | head -8 | sed 's/^/  /'
+
+echo
+echo "── alerts firing then ──"
+q 'ALERTS{alertstate="firing"}' "$T" \
+  | jq -r '.data.result[]? | "  \(.metric.alertname) (\(.metric.severity))"' | sort -u | head -8
+REMOTE
+}
+
+remote "${*:-}"

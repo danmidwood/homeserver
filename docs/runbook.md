@@ -229,6 +229,22 @@ docker restart <name>
 /restart kavita
 ```
 
+**Explain a load or temperature spike**
+```bash
+./tools/whatspiked                    # the worst spike in the last 24h
+./tools/whatspiked "2026-08-23 22:58" # a specific moment
+```
+Asks Prometheus which container was burning CPU at that moment, with the same
+question an hour earlier as a baseline. Faster and more reliable than reading
+journals, because cAdvisor has been recording per-container CPU continuously
+whether or not anything logged.
+
+Almost every thermal alert on this host so far has been Immich: it saturates
+both cores generating thumbnails and transcoding video after a batch upload,
+and the machine is a two-core laptop. That is expected behaviour rather than a
+fault — the alert is telling you the temperature is real, not that something is
+broken.
+
 **Review doorbell footage**
 ```bash
 ./tools/doorbell yesterday
