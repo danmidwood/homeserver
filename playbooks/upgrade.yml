@@ -1,0 +1,138 @@
+# Full system upgrade. Deliberately NOT part of xps.yml.
+#
+# The main playbook is run constantly — several times an hour while developing —
+# and a system upgrade must never be a side effect of deploying a config change.
+# This is a thing you decide to do, while watching.
+#
+#   ansible-playbook -i inventory/hosts.ini playbooks/upgrade.yml
+#
+# Before running:
+#   - Check https://archlinux.org/news/ for manual interventions. Arch
+#     occasionally requires a step no playbook can infer, and skipping it can
+#     leave an unbootable system.
+#   - Have a verified backup. `restic check --read-data` should pass.
+#   - Be able to reach the machine physically. It is a laptop with no remote
+#     console, so a kernel that will not boot means walking to it.
+#
+# This playbook never reboots on its own. It reports whether one is needed and
+# leaves the decision alone.
+
+- name: Upgrade the system
+  hosts: xps
+  become: true
+  vars_files:
+    - ../user_passwords.yml
+
+  tasks:
+    - name: Record the package list before upgrading
+      # Written to the host so it survives this play. Arch keeps old packages in
+      # /var/cache/pacman/pkg, so this list is what makes a targeted downgrade
+      # possible: `pacman -U /var/cache/pacman/pkg/<name>-<old version>-*.zst`.
+      ansible.builtin.shell: |
+        set -o pipefail
+        mkdir -p /var/log/upgrades
+        pacman -Q > "/var/log/upgrades/packages-$(date +%Y%m%d-%H%M%S).txt"
+        ls -1t /var/log/upgrades/packages-*.txt | head -1
+      args:
+        executable: /bin/bash
+      register: pkg_snapshot
+      changed_when: false
+
+    - name: Report where the snapshot went
+      when: not ansible_check_mode
+      ansible.builtin.debug:
+        msg: "Package list saved to {{ pkg_snapshot.stdout }} — use it to downgrade individual packages from /var/cache/pacman/pkg if something breaks."
+
+    - name: Count what is about to change
+      ansible.builtin.shell: |
+        set -o pipefail
+        pacman -Sy >/dev/null 2>&1
+        pacman -Qu 2>/dev/null | wc -l
+      args:
+        executable: /bin/bash
+      register: pending
+      changed_when: false
+      # Runs under --check too. Refreshing the package database is harmless and
+      # idempotent, and without this `--check` reports nothing at all, which
+      # makes the preview useless for the one question it should answer.
+      check_mode: false
+
+    - name: Show the upgrades that carry operational risk
+      ansible.builtin.shell: |
+        pacman -Qu 2>/dev/null | grep -iE '^(linux|linux-lts|systemd|docker|containerd|glibc|openssl|pacman) ' || true
+      register: risky
+      changed_when: false
+      check_mode: false
+
+    - name: Summarise before proceeding
+      ansible.builtin.debug:
+        msg: >-
+          {{ pending.stdout }} packages to upgrade.
+          {{ 'Operationally significant: ' ~ risky.stdout_lines | join('; ')
+             if risky.stdout_lines | length > 0
+             else 'Nothing kernel, init, container-runtime or crypto related.' }}
+
+    - name: Upgrade everything
+      # A full -Syu. Partial upgrades are unsupported on Arch: installing one
+      # package against a stale database is what produced the 404s that led
+      # here in the first place.
+      community.general.pacman:
+        update_cache: true
+        upgrade: true
+      register: upgrade_result
+
+    - name: Find configuration files that need merging
+      # A .pacnew appears when a package ships a new default for a config file
+      # that has been edited locally. The old file stays in place, so nothing
+      # breaks immediately, but the new defaults are silently not applied.
+      ansible.builtin.shell: |
+        find /etc -name '*.pacnew' -newermt '-1 day' 2>/dev/null || true
+      register: pacnew
+      changed_when: false
+
+    - name: Decide whether a reboot is needed
+      # The kernel on disk having moved past the running one is the definitive
+      # signal. Until the reboot happens, newly loaded modules will not match
+      # the running kernel.
+      ansible.builtin.shell: |
+        set -o pipefail
+        running=$(uname -r | sed 's/-arch/\.arch/')
+        installed=$(pacman -Q linux 2>/dev/null | awk '{print $2}')
+        if [ "$running" != "$installed" ]; then echo "yes ($running -> $installed)"; else echo "no"; fi
+      args:
+        executable: /bin/bash
+      register: reboot_needed
+      changed_when: false
+
+    - name: Check the services came back
+      ansible.builtin.shell: |
+        set -o pipefail
+        printf 'containers running: %s\n' "$(docker ps -q 2>/dev/null | wc -l)"
+        printf 'containers unhealthy: %s\n' "$(docker ps -a --format '{{ '{{' }}.Names{{ '}}' }}: {{ '{{' }}.Status{{ '}}' }}' 2>/dev/null | grep -cvE ': Up' || true)"
+        for u in telegram-bot prometheus-node-exporter docker; do
+          printf '%s: %s\n' "$u" "$(systemctl is-active $u 2>/dev/null)"
+        done
+      args:
+        executable: /bin/bash
+      register: services
+      changed_when: false
+
+    - name: Report
+      when: not ansible_check_mode
+      ansible.builtin.debug:
+        msg: |
+          Upgrade finished.
+
+          Reboot needed: {{ reboot_needed.stdout }}
+          {% if pacnew.stdout_lines | length > 0 %}
+          Configuration files needing review ({{ pacnew.stdout_lines | length }}):
+          {{ pacnew.stdout_lines | join('\n') }}
+          {% else %}
+          No .pacnew files to merge.
+          {% endif %}
+          Service state:
+          {{ services.stdout }}
+
+          If something is broken, the package list recorded at the start of this
+          run lists every previous version, and /var/cache/pacman/pkg still holds
+          the packages themselves.

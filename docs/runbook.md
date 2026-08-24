@@ -212,6 +212,26 @@ ansible-playbook -i inventory/hosts.ini playbooks/xps.yml
 A second run must report `changed=0`. If it does not, something is not
 idempotent and should be fixed rather than tolerated.
 
+**Upgrade the system**
+```bash
+ansible-playbook -i inventory/hosts.ini playbooks/upgrade.yml --check   # preview
+ansible-playbook -i inventory/hosts.ini playbooks/upgrade.yml           # do it
+```
+Deliberately a separate playbook: the main one runs many times a day and a
+system upgrade must never be a side effect of deploying a config change.
+
+Arch is a rolling release, so a long gap makes the next upgrade large rather
+than impossible — but read <https://archlinux.org/news/> first, because Arch
+occasionally requires a manual step that no playbook can infer, and skipping it
+can leave the machine unbootable. Have a verified backup, and be able to reach
+the machine physically: it is a laptop with no remote console, so a kernel that
+will not boot means walking to it.
+
+The playbook records the full package list before upgrading. Combined with
+`/var/cache/pacman/pkg`, which still holds the old packages, that allows a
+targeted downgrade: `pacman -U /var/cache/pacman/pkg/<name>-<old version>-*.zst`.
+It never reboots on its own; it reports whether one is needed.
+
 **Reload config without restarting**
 
 Prometheus, Alertmanager and blackbox reload on SIGHUP; Caddy reloads with
