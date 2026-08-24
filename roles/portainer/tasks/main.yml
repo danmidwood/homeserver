@@ -1,6 +1,6 @@
 - name: Pull Portainer image
   community.docker.docker_image_pull:
-    name: "portainer/portainer-ce:2.39.6@sha256:3fa8750ac2b98ce56784ca292df1adc3ec38f0062fd572811ea4b2221beee310"
+    name: "portainer/portainer-ce:2.44.0@sha256:f49255cd9378827fadfde46062ad0395050237c51d03a93a3dc1dbc6050dda3e"
     pull: not_present
 
 - name: Create Portainer volume
@@ -10,7 +10,7 @@
 - name: Run Portainer container
   community.docker.docker_container:
     name: portainer
-    image: "portainer/portainer-ce:2.39.6@sha256:3fa8750ac2b98ce56784ca292df1adc3ec38f0062fd572811ea4b2221beee310"
+    image: "portainer/portainer-ce:2.44.0@sha256:f49255cd9378827fadfde46062ad0395050237c51d03a93a3dc1dbc6050dda3e"
     labels:
       # Checked daily against the registry's tag list for anything newer
       # than the tag pinned above. The digest pin freezes this exact

@@ -1,6 +1,6 @@
 - name: Pull the Vaultwarden Docker image
   community.docker.docker_image_pull:
-    name: "vaultwarden/server:1.37.1@sha256:ebdfe70701c60ac0c28c697e787cea767d7972940b786037b29fe0d507f821e8"
+    name: "vaultwarden/server:1.37.2@sha256:094b5689ed81549bd293418395c7cf495ae9d960fc2d4928cef2083ef913d912"
     pull: not_present
 
 - name: Create Vaultwarden data directory
@@ -14,7 +14,7 @@
 - name: Run Vaultwarden container
   community.docker.docker_container:
     name: "vaultwarden"
-    image: "vaultwarden/server:1.37.1@sha256:ebdfe70701c60ac0c28c697e787cea767d7972940b786037b29fe0d507f821e8"
+    image: "vaultwarden/server:1.37.2@sha256:094b5689ed81549bd293418395c7cf495ae9d960fc2d4928cef2083ef913d912"
     labels:
       # Checked daily against the registry's tag list for anything newer
       # than the tag pinned above. The digest pin freezes this exact

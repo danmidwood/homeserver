@@ -129,6 +129,16 @@ v3.1.0" \
   "$(printf '2.11.4\nv3.1.0\n16-alpine\nv0.9.0.2-ls120\n1.43.3.10896-cb3ebc72d\n26.8.1\nlatest\nbeta\npublic\nplexpass\nalpine\nbookworm\nwindowsservercore-ltsc2025\nedge\n' \
      | apply_exclusions '^[^0-9v];^v[^0-9]' | sort)"
 
+# An architecture suffix is never an upgrade of the version it hangs off, and
+# plex's build-hash tags meant the fallback kept reporting -armhf as available.
+check "baseline drops architecture-suffixed tags, keeps real versions" \
+  "1.43.3.10896-cb3ebc72d
+16-alpine
+2.11.4
+v3.1.0" \
+  "$(printf '2.11.4\nv3.1.0\n16-alpine\n1.43.3.10896-cb3ebc72d\n1.43.3.10896-cb3ebc72d-armhf\n1.43.3.10896-cb3ebc72d-amd64\n2.11.4-arm64\nv3.1.0-ppc64le\n' \
+     | apply_exclusions '^[^0-9v];^v[^0-9];-(amd64|arm64|armhf|armv7|i386|ppc64le|s390x)$' | sort)"
+
 echo "==> tag_shape / same_shape_as"
 
 check "shape of a plain version" "#.#.#" "$(tag_shape 2.11.4)"

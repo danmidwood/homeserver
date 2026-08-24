@@ -43,6 +43,12 @@ LABEL_EXCLUDE="imagewatch.exclude_tags"
 # prometheus a release candidate -- all technically newer in sort order, none
 # of them an answer to "is there a newer release".
 #
+# The third drops architecture-suffixed tags. plexinc/pms-docker publishes
+# 1.43.3.10896-cb3ebc72d-armhf alongside the plain tag, and because plex's build
+# hash means no tag ever shares its shape, the fallback reported that ARM build
+# as an available update. An architecture suffix is never an upgrade of the
+# version it is attached to, so excluding it cannot hide a real release.
+#
 # This is the one place an include-shaped rule is used rather than an exclude,
 # and it is deliberate: every release convention in use here starts with a
 # digit, or a v followed by a digit (2.11.4, v3.1.0, 16-alpine, v0.9.0.2-ls120,
@@ -50,7 +56,7 @@ LABEL_EXCLUDE="imagewatch.exclude_tags"
 # public, plexpass, alpine, bookworm, windowsservercore). A release tagged
 # without a leading digit would be missed, which is why the rule is stated here
 # in one visible place rather than scattered across eighteen labels.
-BASELINE_EXCLUDE='^[^0-9v];^v[^0-9]'
+BASELINE_EXCLUDE='^[^0-9v];^v[^0-9];-(amd64|arm64|armhf|armv7|i386|ppc64le|s390x)$'
 
 # ---------------------------------------------------------------------------
 # Pure helpers. These are unit-tested offline by tests/check-image-update.sh,
@@ -156,7 +162,11 @@ apply_exclusions() {
   local IFS=';' pat
   for pat in $patterns; do
     [[ -z "$pat" ]] && continue
-    filtered=$(printf '%s\n' "$filtered" | grep -Ev "$pat" || true)
+    # -e is required, not stylistic: a pattern beginning with a hyphen, such as
+    # the architecture-suffix rule, is otherwise parsed by grep as options and
+    # silently matches nothing. The exclusion then appears configured while
+    # doing absolutely nothing.
+    filtered=$(printf '%s\n' "$filtered" | grep -Ev -e "$pat" || true)
   done
   printf '%s\n' "$filtered"
 }
