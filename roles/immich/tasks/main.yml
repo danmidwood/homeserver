@@ -95,7 +95,13 @@
     volumes:
       - /mnt/tmdas/immich/upload:/usr/src/app/upload
       - /etc/localtime:/etc/localtime:ro
-      - /mnt/tmdas/Photos:/external:ro
+    comparisons:
+      # Without this, removing a volume from the list above does nothing at all.
+      # docker_container defaults to allow_more_present for volumes, meaning a
+      # running container holding mounts the spec no longer lists is considered
+      # a match — so the spec can only ever add, never take away. A stale
+      # /external mount survived several deploys because of it.
+      volumes: strict
     networks:
       - name: caddy_network
       - name: immich_network
