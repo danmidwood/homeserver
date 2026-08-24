@@ -1,0 +1,76 @@
+rule_files:
+  - ../../roles/prometheus/files/rules/pacman.yml
+
+evaluation_interval: 1h
+
+tests:
+  # Upgraded recently: silence. promtool's clock starts at zero, so a timestamp
+  # equal to the evaluation time means "just now".
+  - interval: 1h
+    input_series:
+      - series: 'pacman_last_full_upgrade_timestamp_seconds{instance="xps",job="node"}'
+        values: '86400+0x100'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: SystemUpgradeOverdue
+        exp_alerts: []
+      - eval_time: 25h
+        alertname: SystemUpgradeNeverRecorded
+        exp_alerts: []
+      - eval_time: 25h
+        alertname: PacmanMetricsMissing
+        exp_alerts: []
+
+  # Not upgraded for over 60 days.
+  - interval: 1h
+    input_series:
+      - series: 'pacman_last_full_upgrade_timestamp_seconds{instance="xps",job="node"}'
+        values: '86400+0x2000'
+    alert_rule_test:
+      # Not yet overdue at 60 days: the rule is a strict >.
+      - eval_time: 1464h
+        alertname: SystemUpgradeOverdue
+        exp_alerts: []
+      - eval_time: 1600h
+        alertname: SystemUpgradeOverdue
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: xps
+              job: node
+            exp_annotations:
+              summary: "No full system upgrade in 65d 16h 0m 0s"
+              description: "The host has not had a `pacman -Syu` in over 60 days. Arch does not support partial upgrades, so the gap is the risk: installing any new package meanwhile builds it against libraries this system does not have. Run `ansible-playbook -i inventory/hosts.ini playbooks/upgrade.yml --check` to preview, and read https://archlinux.org/news/ first."
+
+  # A zero timestamp is "never recorded", not "overdue since 1970".
+  - interval: 1h
+    input_series:
+      - series: 'pacman_last_full_upgrade_timestamp_seconds{instance="xps",job="node"}'
+        values: '0+0x100'
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: SystemUpgradeNeverRecorded
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              instance: xps
+              job: node
+            exp_annotations:
+              summary: "No system upgrade has ever been recorded"
+              description: "pacman's log contains no full system upgrade. Either the host has never been upgraded since installation, or the log has been rotated away. Check `grep 'full system upgrade' /var/log/pacman.log`."
+
+  # No metric at all.
+  - interval: 1h
+    input_series: []
+    alert_rule_test:
+      - eval_time: 1h
+        alertname: PacmanMetricsMissing
+        exp_alerts: []
+      - eval_time: 4h
+        alertname: PacmanMetricsMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "No system upgrade metric is being reported"
+              description: "pacman_last_full_upgrade_timestamp_seconds is absent, so SystemUpgradeOverdue cannot fire. Check `systemctl status pacman-metrics.timer` on the host."

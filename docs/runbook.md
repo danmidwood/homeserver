@@ -220,6 +220,18 @@ ansible-playbook -i inventory/hosts.ini playbooks/upgrade.yml           # do it
 Deliberately a separate playbook: the main one runs many times a day and a
 system upgrade must never be a side effect of deploying a config change.
 
+**Arch has no supported partial upgrade.** Packages are built against whatever
+versions of their dependencies are current, with no ABI promise between them, so
+upgrading some but not others is the classic way to break the system. It is
+`-Syu` or nothing — there is no smaller, safer version of this operation.
+
+The consequence, which bites in a non-obvious way: **while the system is behind,
+do not add a new package to any role.** `state: present` only acts when a
+package is missing, so existing roles are safe to re-run; but installing
+something new fetches it built against libraries this host does not have.
+`SystemUpgradeOverdue` fires after 60 days precisely so this gap does not
+accumulate silently again.
+
 Arch is a rolling release, so a long gap makes the next upgrade large rather
 than impossible — but read <https://archlinux.org/news/> first, because Arch
 occasionally requires a manual step that no playbook can infer, and skipping it

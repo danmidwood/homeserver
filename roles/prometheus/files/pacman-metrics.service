@@ -1,0 +1,7 @@
+[Unit]
+Description=Report how long since the last full system upgrade
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pacman-metrics.sh
+TimeoutStartSec=2m

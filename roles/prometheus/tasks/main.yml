@@ -96,6 +96,32 @@
     state: started
     daemon_reload: true
 
+- name: Install the pacman staleness collector
+  ansible.builtin.copy:
+    src: pacman-metrics.sh
+    dest: /usr/local/bin/pacman-metrics.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the pacman collector unit
+  ansible.builtin.copy:
+    src: pacman-metrics.service
+    dest: /etc/systemd/system/pacman-metrics.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for SMART collector
+
+- name: Install the pacman collector timer
+  ansible.builtin.copy:
+    src: pacman-metrics.timer
+    dest: /etc/systemd/system/pacman-metrics.timer
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for SMART collector
+
 - name: Template the SMART collector
   ansible.builtin.template:
     src: smart-metrics.sh.j2
@@ -124,6 +150,13 @@
 
 - name: Flush handlers so systemd sees the new units before enabling the timer
   ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the pacman staleness timer
+  ansible.builtin.systemd:
+    name: pacman-metrics.timer
+    enabled: true
+    state: started
+    daemon_reload: true
 
 - name: Enable and start the SMART collector timer
   ansible.builtin.systemd:

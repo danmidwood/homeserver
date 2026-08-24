@@ -1,0 +1,42 @@
+groups:
+  - name: pacman
+    rules:
+      # The risk of an Arch system is entirely in the gap between upgrades, not
+      # in the upgrade itself. Arch has no supported partial upgrade — packages
+      # are built against whatever versions of their dependencies are current —
+      # so the only choice is a full -Syu or nothing, and a rare one is far more
+      # dangerous than a frequent one. A month's worth is a couple of dozen
+      # packages; twenty months was 411, including the kernel, glibc, systemd
+      # and the container runtime.
+      #
+      # 60 days rather than 30: this should prompt, not nag. Missing one month
+      # is unremarkable, missing two is drift.
+      - alert: SystemUpgradeOverdue
+        expr: time() - pacman_last_full_upgrade_timestamp_seconds > 60 * 24 * 3600
+        labels:
+          severity: warning
+        annotations:
+          summary: "No full system upgrade in {{ $value | humanizeDuration }}"
+          description: "The host has not had a `pacman -Syu` in over 60 days. Arch does not support partial upgrades, so the gap is the risk: installing any new package meanwhile builds it against libraries this system does not have. Run `ansible-playbook -i inventory/hosts.ini playbooks/upgrade.yml --check` to preview, and read https://archlinux.org/news/ first."
+
+      # A timestamp of zero means the log carried no upgrade at all, which is
+      # different from being overdue and would otherwise read as 1970.
+      - alert: SystemUpgradeNeverRecorded
+        expr: pacman_last_full_upgrade_timestamp_seconds == 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "No system upgrade has ever been recorded"
+          description: "pacman's log contains no full system upgrade. Either the host has never been upgraded since installation, or the log has been rotated away. Check `grep 'full system upgrade' /var/log/pacman.log`."
+
+      # Comparing a timestamp needs the timestamp to exist; an absent one has
+      # nothing to compare and would silently never fire.
+      - alert: PacmanMetricsMissing
+        expr: absent(pacman_last_full_upgrade_timestamp_seconds)
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: "No system upgrade metric is being reported"
+          description: "pacman_last_full_upgrade_timestamp_seconds is absent, so SystemUpgradeOverdue cannot fire. Check `systemctl status pacman-metrics.timer` on the host."
