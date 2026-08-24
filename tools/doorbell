@@ -17,6 +17,7 @@
 #   doorbell 2026-08-22 15:30     play the clip nearest that time
 #   doorbell yesterday --all      fetch and queue the whole day
 #   doorbell yesterday --long     only clips likely to show something
+#   doorbell yesterday --long --thumbs   inline thumbnails (iTerm2 only)
 #   doorbell yesterday --long --all
 #   doorbell yesterday --min 12   an explicit threshold in seconds
 #   doorbell 2026-08-22 15:30 --dry-run   show the match without playing
@@ -75,23 +76,51 @@ resolve_date() {
 list_clips() {
   local y="${1:0:4}" m="${1:5:2}" compact="${1//-/}"
   ssh -o ConnectTimeout=30 "$HOST" bash -s <<REMOTE
-find '${ROOT}/${y}/${m}' -type f -iname '*${compact}*.mp4' -print0 2>/dev/null \
+dir='${ROOT}/${y}/${m}'
+tmp=\$(mktemp -d)
+trap 'rm -rf "\$tmp"' EXIT
+
+# Stills. Matching uses the timestamp in the FILENAME, not the upload time:
+# filenames record when the event happened, and the still is always five to
+# seven seconds after the clip. Upload times drift apart by however long the
+# video took to transfer, which varies with its size.
+find "\$dir" -type f -iname '*${compact}*.jpg' 2>/dev/null | sort > "\$tmp/jpgs"
+
+find "\$dir" -type f -iname '*${compact}*.mp4' -print0 2>/dev/null \
   | xargs -0 -P 4 -I{} sh -c '
       f="\$1"
       s=\$(stat -c %s "\$f" 2>/dev/null || echo 0)
       d=""
       if [ "\$s" -gt 0 ]; then
         d=\$(ffprobe -v error -show_entries format=duration -of csv=p=0 "\$f" 2>/dev/null)
-        # ffprobe prints N/A for a file it can open but cannot measure, which
-        # is what a truncated upload looks like. Normalised to empty here so
-        # everything downstream treats it as unusable -- and because awk
-        # compares a non-numeric string against a number lexically, where
-        # "N/A" > "12", so an unnormalised N/A passes every threshold.
         case "\$d" in ""|N/A) d="" ;; esac
       fi
-      printf "%s\t%s\t%s\n" "\$f" "\$s" "\$d"
+      printf "%s\037%s\037%s\n" "\$f" "\$s" "\$d"
     ' _ {} \
-  | sort
+  | sort > "\$tmp/mp4s"
+
+awk -F'\037' -v jpgs="\$tmp/jpgs" '
+  # Seconds since midnight, from the YYYYMMDDHHMMSS in the filename. Everything
+  # here is one days worth, so the date part can be ignored.
+  function secs(path,   n, parts, ts) {
+    n = split(path, parts, "_"); ts = parts[n]; sub(/\..*\$/, "", ts)
+    return substr(ts, 9, 2) * 3600 + substr(ts, 11, 2) * 60 + substr(ts, 13, 2)
+  }
+  BEGIN { n = 0; while ((getline line < jpgs) > 0) { jp[++n] = line; jt[n] = secs(line) } }
+  {
+    still = ""; best = 16; bi = 0
+    for (i = 1; i <= n; i++) {
+      if (used[i]) continue
+      gap = jt[i] - secs(\$1)
+      if (gap >= 0 && gap < best) { best = gap; still = jp[i]; bi = i }
+    }
+    # Claimed exclusively. Without this, a clip whose own still failed to
+    # upload borrows the one belonging to a nearby clip, and the thumbnail then
+    # shows a different event entirely, which is worse than showing none.
+    if (bi) used[bi] = 1
+    printf "%s\037%s\037%s\037%s\n", \$1, \$2, \$3, still
+  }
+' "\$tmp/mp4s"
 REMOTE
 }
 
@@ -135,6 +164,7 @@ WANT_TIME=""
 PLAY_ALL=0
 DRY_RUN=0
 MIN_DUR=0
+THUMBS=0
 expect_min=0
 for arg in "$@"; do
   if [ "$expect_min" -eq 1 ]; then
@@ -147,6 +177,7 @@ for arg in "$@"; do
     --all) PLAY_ALL=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --long) MIN_DUR="$LONG_SECONDS" ;;
+    --thumbs) THUMBS=1 ;;
     --min) expect_min=1 ;;
     [0-9][0-9]:[0-9][0-9]) WANT_TIME="$arg" ;;
     [0-9][0-9]:[0-9][0-9]:[0-9][0-9]) WANT_TIME="$arg" ;;
@@ -159,12 +190,18 @@ YMD=$(resolve_date "$DATE_ARG") || exit 1
 
 # Each record is path<TAB>size<TAB>duration. Read the long way: bash 3.2 has
 # no mapfile.
-CLIPS=(); SIZES=(); DURS=()
-while IFS=$'\t' read -r rpath rsize rdur; do
+CLIPS=(); SIZES=(); DURS=(); STILLS=()
+# Unit Separator, not tab. Tab is an IFS whitespace character, so bash
+# collapses runs of them and strips leading ones -- a record with an empty
+# duration field would silently shift the still into the duration slot. This
+# went unnoticed while duration was the last field, where the trailing
+# delimiter is harmlessly dropped.
+while IFS=$'\037' read -r rpath rsize rdur rstill; do
   [ -z "$rpath" ] && continue
   CLIPS[${#CLIPS[@]}]="$rpath"
   SIZES[${#SIZES[@]}]="$rsize"
   DURS[${#DURS[@]}]="$rdur"
+  STILLS[${#STILLS[@]}]="$rstill"
 done < <(list_clips "$YMD")
 [ "${#CLIPS[@]}" -eq 0 ] && { echo "No clips for ${YMD}."; exit 0; }
 
@@ -205,8 +242,36 @@ meets_min() {
   awk -v d="$dur" -v m="$MIN_DUR" 'BEGIN { exit !(d + 0 >= m + 0) }'
 }
 
+# iTerm2 renders images inline via its own escape sequence. imgcat ships inside
+# the app bundle, so it is on PATH without installing shell integration; the
+# raw protocol is used if it is missing.
+show_image() {
+  local f="$1"
+  if command -v imgcat >/dev/null 2>&1; then
+    imgcat "$f"
+  else
+    printf '\033]1337;File=inline=1;width=40;preserveAspectRatio=1:%s\a\n' "$(base64 < "$f")"
+  fi
+}
+
 # --- list -------------------------------------------------------------------
 if [ -z "$WANT_TIME" ] && [ "$PLAY_ALL" -eq 0 ]; then
+  if [ "$THUMBS" -eq 1 ]; then
+    [ "${TERM_PROGRAM:-}" = "iTerm.app" ] || \
+      echo "note: inline images need iTerm2; TERM_PROGRAM is '${TERM_PROGRAM:-unset}'" >&2
+    n=0
+    for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
+      meets_min "${DURS[$i]}" || continue
+      [ -z "${STILLS[$i]}" ] && continue
+      printf '%s  %s  %s\n' "$(time_of "${CLIPS[$i]}")" "$(human_dur "${DURS[$i]}")" "$(human_size "${SIZES[$i]}")"
+      show_image "$(fetch "${STILLS[$i]}" "$YMD")"
+      n=$(( n + 1 ))
+    done
+    [ "$n" -eq 0 ] && echo "No clips with a still matched." || \
+      echo "${n} shown. Play one with: doorbell ${YMD} HH:MM"
+    exit 0
+  fi
+
   empty=0; shown=0
   for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
     [ -z "${DURS[$i]}" ] && empty=$(( empty + 1 ))

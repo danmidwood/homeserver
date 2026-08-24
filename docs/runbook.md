@@ -253,7 +253,14 @@ broken.
 ./tools/doorbell yesterday --all    # fetch and queue the day
 ./tools/doorbell yesterday --long --all
 ./tools/doorbell yesterday --min 12 # an explicit threshold
+./tools/doorbell yesterday --long --thumbs   # inline stills, iTerm2 only
 ```
+The camera uploads a still a few seconds after each clip, and `--thumbs`
+renders them inline in iTerm2 (via `imgcat`, which ships inside the app bundle
+— no shell integration needed). Stills are matched to clips by the timestamp in
+the filename rather than by upload time, because upload times drift apart by
+however long the video took to transfer. Around 90% of clips have a matching
+still; the rest failed to upload one.
 Clip lengths are bimodal: a large spike at two to four seconds, a trough at six
 to eight, and a second population from eight upwards. The short clips are
 motion crossing the frame; the longer ones are where something actually
