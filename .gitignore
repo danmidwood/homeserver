@@ -8,3 +8,8 @@
 # via an EXIT trap on a normal run, but an interrupted run (Ctrl-C, a
 # crash, a killed terminal) can leave it behind untracked.
 /tests/.prometheus.rendered.*
+
+# Implementation plans are scaffolding: once executed, the code and the specs
+# are the record. Keeping them invites the opposite of documentation — three of
+# them described building Diun in detail, months after it was replaced.
+/docs/superpowers/plans/
