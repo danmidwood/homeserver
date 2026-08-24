@@ -17,7 +17,11 @@
 #   doorbell 2026-08-22 15:30     play the clip nearest that time
 #   doorbell yesterday --all      fetch and queue the whole day
 #   doorbell yesterday --long     only clips likely to show something
-#   doorbell yesterday --long --thumbs   inline thumbnails (iTerm2 only)
+#   doorbell yesterday --long --thumbs   a labelled grid, inline (iTerm2 only)
+#
+# Grid shape is adjustable:
+#   DOORBELL_THUMB_COLS=6 doorbell yesterday --thumbs    wider, shorter
+#   DOORBELL_THUMB_PX=180 doorbell yesterday --thumbs    smaller tiles
 #   doorbell yesterday --long --all
 #   doorbell yesterday --min 12   an explicit threshold in seconds
 #   doorbell 2026-08-22 15:30 --dry-run   show the match without playing
@@ -45,6 +49,8 @@ ROOT="${DOORBELL_ROOT:-/mnt/storage/ftp/data/ftpuser}"
 CACHE="${DOORBELL_CACHE:-$HOME/.cache/doorbell}"
 VLC_APP="${DOORBELL_VLC_APP:-/Applications/VLC.app}"
 LONG_SECONDS="${DOORBELL_LONG_SECONDS:-8}"
+THUMB_COLS="${DOORBELL_THUMB_COLS:-4}"
+THUMB_PX="${DOORBELL_THUMB_PX:-260}"
 
 die() { echo "doorbell: $*" >&2; exit 1; }
 
@@ -244,13 +250,16 @@ meets_min() {
 
 # iTerm2 renders images inline via its own escape sequence. imgcat ships inside
 # the app bundle, so it is on PATH without installing shell integration; the
-# raw protocol is used if it is missing.
+# raw protocol is the fallback if it is missing.
+#
+# -W 100% scales to the terminal width. Without it a 2560-pixel-wide still is
+# drawn at its natural size and fills the screen.
 show_image() {
-  local f="$1"
+  local f="$1" width="${2:-100%}"
   if command -v imgcat >/dev/null 2>&1; then
-    imgcat "$f"
+    imgcat -r -W "$width" "$f"
   else
-    printf '\033]1337;File=inline=1;width=40;preserveAspectRatio=1:%s\a\n' "$(base64 < "$f")"
+    printf '\033]1337;File=inline=1;width=%s;preserveAspectRatio=1:%s\a\n' "$width" "$(base64 < "$f")"
   fi
 }
 
@@ -259,16 +268,49 @@ if [ -z "$WANT_TIME" ] && [ "$PLAY_ALL" -eq 0 ]; then
   if [ "$THUMBS" -eq 1 ]; then
     [ "${TERM_PROGRAM:-}" = "iTerm.app" ] || \
       echo "note: inline images need iTerm2; TERM_PROGRAM is '${TERM_PROGRAM:-unset}'" >&2
-    n=0
+
+    # Each image is passed to montage preceded by its own -label, which is how
+    # montage attaches a caption per tile rather than one for the whole sheet.
+    MONTAGE_ARGS=(); n=0
     for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
       meets_min "${DURS[$i]}" || continue
       [ -z "${STILLS[$i]}" ] && continue
-      printf '%s  %s  %s\n' "$(time_of "${CLIPS[$i]}")" "$(human_dur "${DURS[$i]}")" "$(human_size "${SIZES[$i]}")"
-      show_image "$(fetch "${STILLS[$i]}" "$YMD")"
+      local_still="$(fetch "${STILLS[$i]}" "$YMD")"
+      MONTAGE_ARGS[${#MONTAGE_ARGS[@]}]="-label"
+      MONTAGE_ARGS[${#MONTAGE_ARGS[@]}]="$(time_of "${CLIPS[$i]}")  $(echo "$(human_dur "${DURS[$i]}")" | tr -d ' ')"
+      MONTAGE_ARGS[${#MONTAGE_ARGS[@]}]="$local_still"
       n=$(( n + 1 ))
     done
-    [ "$n" -eq 0 ] && echo "No clips with a still matched." || \
-      echo "${n} shown. Play one with: doorbell ${YMD} HH:MM"
+
+    if [ "$n" -eq 0 ]; then
+      echo "No clips with a still matched."
+      exit 0
+    fi
+
+    if command -v montage >/dev/null 2>&1; then
+      # JPEG at 8 bits, not PNG: montage defaults to 16-bit colour, which
+      # produced a five megabyte sheet for fifteen thumbnails. The terminal has
+      # to receive every byte of that, base64 encoded.
+      sheet="${CACHE}/${YMD}/.sheet-${MIN_DUR}.jpg"
+      mkdir -p "$(dirname "$sheet")"
+      montage -background '#1c1c1c' -fill '#dddddd' -pointsize 13 \
+        -tile "${THUMB_COLS}x" -geometry "${THUMB_PX}x+5+5" \
+        -depth 8 -quality 85 \
+        "${MONTAGE_ARGS[@]}" "$sheet" 2>/dev/null \
+        || die "montage failed building the contact sheet"
+      echo "${YMD} — ${n} clips"
+      show_image "$sheet" "100%"
+    else
+      # No ImageMagick: fall back to one per line, scaled down.
+      echo "${YMD} — ${n} clips (install imagemagick for a grid)"
+      for i in $(seq 0 $(( ${#CLIPS[@]} - 1 ))); do
+        meets_min "${DURS[$i]}" || continue
+        [ -z "${STILLS[$i]}" ] && continue
+        printf '%s  %s\n' "$(time_of "${CLIPS[$i]}")" "$(human_dur "${DURS[$i]}")"
+        show_image "$(fetch "${STILLS[$i]}" "$YMD")" 30
+      done
+    fi
+    echo "Play one with: doorbell ${YMD} HH:MM"
     exit 0
   fi
 

@@ -256,11 +256,14 @@ broken.
 ./tools/doorbell yesterday --long --thumbs   # inline stills, iTerm2 only
 ```
 The camera uploads a still a few seconds after each clip, and `--thumbs`
-renders them inline in iTerm2 (via `imgcat`, which ships inside the app bundle
+builds a labelled grid of them and renders it inline in iTerm2 (via `imgcat`, which ships inside the app bundle
 — no shell integration needed). Stills are matched to clips by the timestamp in
 the filename rather than by upload time, because upload times drift apart by
 however long the video took to transfer. Around 90% of clips have a matching
 still; the rest failed to upload one.
+
+`DOORBELL_THUMB_COLS` and `DOORBELL_THUMB_PX` change the grid shape — six
+columns makes the sheet wider and shorter, which suits a busy day.
 Clip lengths are bimodal: a large spike at two to four seconds, a trough at six
 to eight, and a second population from eight upwards. The short clips are
 motion crossing the frame; the longer ones are where something actually
