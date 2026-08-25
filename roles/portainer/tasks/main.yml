@@ -26,6 +26,13 @@
       # v0.9.0.2-ls120, 16-alpine and 1.43.3.10896-cb3ebc72d.
       imagewatch.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
     state: started
+    # Every other container here sets this; portainer was the one that did
+    # not, and it was the one service that failed to come back after the
+    # 25 Aug 2026 reboot. Without it Docker leaves a stopped container
+    # stopped, so the miss is invisible until something asks for it --
+    # ContainerMissing fired, eight hours late, because the alert depends on
+    # the monitoring stack that was down for the same reboot.
+    restart_policy: always
     ports:
       - "8000:8000"
       - "9000:9000"
