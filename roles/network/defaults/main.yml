@@ -1,0 +1,30 @@
+# The wifi networks this host should be able to join unattended.
+#
+# The UUIDs are the ones NetworkManager already assigned to these profiles.
+# They are pinned rather than generated because a fresh UUID makes
+# NetworkManager treat the result as a second, competing profile for the same
+# SSID instead of managing the existing one.
+#
+# Both bands of the same access point are kept. 2.4GHz is slower but carries
+# further, so it is the fallback if the 5GHz radio cannot associate -- and on
+# a headless machine, failing to get online is unrecoverable without opening
+# the laptop. The higher priority wins when both are in range.
+#
+# The passphrase is not here. It comes from wifi_psk in user_passwords.yml,
+# which is gitignored.
+wifi_networks:
+  - id: "Zen Internet - FRITZ!Box AE 5"
+    ssid: "Zen Internet - FRITZ!Box AE 5"
+    uuid: "d9f8017c-2b7a-4bbd-a6d3-57dec1990143"
+    priority: 10
+
+  - id: "Zen Internet - FRITZ!Box AE"
+    ssid: "Zen Internet - FRITZ!Box AE"
+    uuid: "7ebfc13d-f16d-49ee-9fe1-1c66b4e86f24"
+    priority: 5
+
+# Profiles to remove from the host. These were saved in passing and are not
+# networks this server should ever join on its own.
+wifi_networks_absent:
+  - "Daniel’s iPhone"
+  - "ASK4 Wireless"

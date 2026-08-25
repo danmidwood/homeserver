@@ -20,3 +20,41 @@
     group: root
     mode: '0644'
   notify: Reload NetworkManager
+
+- name: Report when the wifi passphrase has not been filled in
+  # Deliberately not an assert. The main playbook runs many times a day, and
+  # failing every run because a secret is blank would be worse than leaving
+  # the existing profiles alone -- they already work. This says so out loud
+  # instead, so an unmanaged profile cannot be mistaken for a managed one.
+  when: wifi_psk | default('') | length == 0
+  ansible.builtin.debug:
+    msg: >-
+      wifi_psk is empty in user_passwords.yml, so the wifi profiles are NOT
+      being managed. The profiles already on the host are untouched. Fill in
+      wifi_psk to deploy them.
+
+- name: Install the wifi profiles
+  # NetworkManager refuses to load a profile that is readable by anyone but
+  # root, so 0600 is a functional requirement rather than caution.
+  #
+  # no_log because the rendered file contains the passphrase, and a diff or a
+  # changed-file report would otherwise print it into the playbook output.
+  when: wifi_psk | default('') | length > 0
+  ansible.builtin.template:
+    src: wifi.nmconnection.j2
+    dest: "/etc/NetworkManager/system-connections/{{ item.id }}.nmconnection"
+    owner: root
+    group: root
+    mode: '0600'
+  loop: "{{ wifi_networks }}"
+  loop_control:
+    label: "{{ item.id }}"
+  no_log: true
+  notify: Reload NetworkManager
+
+- name: Remove wifi profiles this host should not keep
+  ansible.builtin.file:
+    path: "/etc/NetworkManager/system-connections/{{ item }}.nmconnection"
+    state: absent
+  loop: "{{ wifi_networks_absent }}"
+  notify: Reload NetworkManager

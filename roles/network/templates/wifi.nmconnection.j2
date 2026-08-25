@@ -1,0 +1,32 @@
+# Managed by Ansible. Do not edit on the host.
+#
+# interface-name is deliberately absent. The profiles this replaced were
+# pinned to wlp58s0, but on a rebuild the wireless interface may enumerate
+# under a different name, and a profile bound to a name that does not exist
+# will not connect. A headless machine that cannot get online is the failure
+# this file exists to prevent, so the profile binds to whatever wifi device
+# is present instead.
+[connection]
+id={{ item.id }}
+uuid={{ item.uuid }}
+type=wifi
+autoconnect=true
+autoconnect-priority={{ item.priority }}
+
+[wifi]
+mode=infrastructure
+ssid={{ item.ssid }}
+
+[wifi-security]
+auth-alg=open
+key-mgmt=wpa-psk
+psk={{ wifi_psk }}
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=default
+method=auto
+
+[proxy]
