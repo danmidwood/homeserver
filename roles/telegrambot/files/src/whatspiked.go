@@ -22,8 +22,14 @@ import (
 // records which of our units were active, so the same question is answered
 // from data we are collecting anyway.
 
-// nameWidth is the container column, in display columns.
-const nameWidth = 20
+// Column widths for the container table, in display columns. Both numeric
+// columns are right-aligned so the digits line up under each other, and each
+// header label shares its column's right edge.
+const (
+	nameWidth = 20
+	cpuWidth  = 6 // "  196%"
+	baseWidth = 6 // matches cpuWidth; the header overhangs it to the right
+)
 
 // promSeries is one labelled sample from an instant query.
 type promSeries struct {
@@ -246,7 +252,12 @@ func (b *Bot) whatspiked(ctx context.Context, arg string) string {
 		if len(now) > 6 {
 			now = now[:6]
 		}
-		body.WriteString("\n" + padName("container", nameWidth) + "    cpu   1h before\n")
+		// The header label is longer than the column and simply overhangs it,
+		// rather than the values being padded out to match: widening the
+		// column to fit the words pushes the two figures being compared far
+		// apart, which is the opposite of what this table is for.
+		body.WriteString("\n" + padName("container", nameWidth) +
+			fmt.Sprintf(" %*s   %s\n", cpuWidth, "cpu", "1h before"))
 		for _, s := range now {
 			name := s.Labels["name"]
 			was := "—"
@@ -258,7 +269,7 @@ func (b *Bot) whatspiked(ctx context.Context, arg string) string {
 			// misaligns the column because Telegram renders "&amp;" back to a
 			// single character.
 			body.WriteString(html.EscapeString(padName(name, nameWidth)) +
-				fmt.Sprintf(" %5.0f%%   %s\n", s.Value*100, was))
+				fmt.Sprintf(" %*.0f%%   %*s\n", cpuWidth-1, s.Value*100, baseWidth, was))
 		}
 	}
 

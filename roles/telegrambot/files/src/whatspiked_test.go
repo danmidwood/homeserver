@@ -365,3 +365,45 @@ func TestPadName(t *testing.T) {
 		}
 	}
 }
+
+// Both numeric columns are right-aligned, so the digits line up under each
+// other. The baseline started life as a bare "%s", which left-aligned it:
+// "160%" and "1%" began at the same column instead of ending at one.
+func TestWhatspikedRightAlignsBothNumericColumns(t *testing.T) {
+	srv := spikeServer(t, "2026-08-24 22:58",
+		map[string]string{"immich-machine-learning": "1.96", "planka": "0.01"},
+		map[string]string{"immich-machine-learning": "1.60", "planka": "0.01"})
+
+	b := &Bot{PromURL: srv.URL, AlertURL: srv.URL}
+	got := b.whatspiked(context.Background(), "2026-08-24 22:58")
+
+	var cpuEnds, baseEnds []int
+	for _, line := range strings.Split(got, "\n") {
+		if !strings.HasPrefix(line, "immich-") && !strings.HasPrefix(line, "planka") {
+			continue
+		}
+		r := []rune(line)
+		var ends []int
+		for i, c := range r {
+			if c == '%' {
+				ends = append(ends, i)
+			}
+		}
+		if len(ends) != 2 {
+			t.Fatalf("expected two percentages in %q, got %d", line, len(ends))
+		}
+		cpuEnds = append(cpuEnds, ends[0])
+		baseEnds = append(baseEnds, ends[1])
+	}
+	if len(cpuEnds) < 2 {
+		t.Fatalf("expected two rows, got %d in\n%s", len(cpuEnds), got)
+	}
+	for i := 1; i < len(cpuEnds); i++ {
+		if cpuEnds[i] != cpuEnds[0] {
+			t.Errorf("cpu column not right-aligned: %v in\n%s", cpuEnds, got)
+		}
+		if baseEnds[i] != baseEnds[0] {
+			t.Errorf("baseline column not right-aligned: %v in\n%s", baseEnds, got)
+		}
+	}
+}
