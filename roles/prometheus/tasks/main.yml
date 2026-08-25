@@ -81,6 +81,14 @@
     mode: '0644'
   notify: Restart node-exporter
 
+- name: Create the node-exporter drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/prometheus-node-exporter.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
 - name: Write the expected-container list for ContainerMissing
   ansible.builtin.template:
     src: container_expected.prom.j2
@@ -88,6 +96,41 @@
     owner: root
     group: root
     mode: '0644'
+
+- name: Make node-exporter wait for the docker bridge it binds to
+  # node-exporter binds to the docker0 gateway address (see the args above).
+  # That address does not exist until Docker creates the bridge, but the
+  # packaged unit orders itself only after network-online.target. On a cold
+  # boot the exporter therefore starts first, fails with "cannot assign
+  # requested address", burns its default start limit of five attempts in
+  # about twenty milliseconds, and stays dead. Everything downstream goes
+  # blind with it: node_load1, the filesystem metrics and every textfile
+  # metric (backup age, SMART, power, pacman, restore drill,
+  # container_expected).
+  #
+  # The comment on the listen address argues that a bad address should fail
+  # loudly, and it still does -- but only once these retries are exhausted.
+  # A transient boot race is a different thing from a wrong address, and it
+  # should not be latched into a permanent failure.
+  #
+  # This is a drop-in rather than an edit to the unit: the unit is owned by
+  # the package and a pacman upgrade would overwrite it.
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible. Do not edit on the host.
+      [Unit]
+      After=docker.service
+      Wants=docker.service
+      StartLimitIntervalSec=300
+      StartLimitBurst=20
+
+      [Service]
+      RestartSec=5
+    dest: /etc/systemd/system/prometheus-node-exporter.service.d/wait-for-docker.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart node-exporter
 
 - name: Start and enable node-exporter
   ansible.builtin.systemd:
