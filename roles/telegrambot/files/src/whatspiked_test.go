@@ -312,3 +312,56 @@ func TestWhatspikedAsksOnlyForJobsThatWereRunning(t *testing.T) {
 		}
 	}
 }
+
+// The reply is a fixed-width table inside <pre>, so every cpu figure must
+// start at the same column. trim() appends an ellipsis *after* cutting to n,
+// returning n+1 characters, which pushed the number one column right for any
+// name long enough to be truncated -- visible in the first real reply as
+// "immich-machine-learn…   195%" sitting past "immich-server          190%".
+func TestWhatspikedAlignsColumnsWhenNamesAreTruncated(t *testing.T) {
+	srv := spikeServer(t, "2026-08-24 22:58",
+		map[string]string{
+			"immich-machine-learning": "1.95", // long enough to be truncated
+			"immich-server":           "1.90",
+		},
+		map[string]string{"immich-machine-learning": "1.65", "immich-server": "1.82"})
+
+	b := &Bot{PromURL: srv.URL, AlertURL: srv.URL}
+	got := b.whatspiked(context.Background(), "2026-08-24 22:58")
+
+	var cols []int
+	for _, line := range strings.Split(got, "\n") {
+		if !strings.HasPrefix(line, "immich-") {
+			continue
+		}
+		i := strings.Index(line, "%")
+		if i < 0 {
+			t.Fatalf("no percentage in row %q", line)
+		}
+		cols = append(cols, len([]rune(line[:i])))
+	}
+	if len(cols) < 2 {
+		t.Fatalf("expected two container rows, got %d in %q", len(cols), got)
+	}
+	for _, c := range cols[1:] {
+		if c != cols[0] {
+			t.Errorf("cpu column not aligned: positions %v in\n%s", cols, got)
+		}
+	}
+}
+
+func TestPadName(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"immich-server", "immich-server       "},
+		{"immich-machine-learning", "immich-machine-lear…"},
+		{"x", "x                   "},
+	} {
+		got := padName(tc.in, 20)
+		if got != tc.want {
+			t.Errorf("padName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+		if n := len([]rune(got)); n != 20 {
+			t.Errorf("padName(%q) is %d columns, want 20", tc.in, n)
+		}
+	}
+}

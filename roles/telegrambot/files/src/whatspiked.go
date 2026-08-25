@@ -22,6 +22,9 @@ import (
 // records which of our units were active, so the same question is answered
 // from data we are collecting anyway.
 
+// nameWidth is the container column, in display columns.
+const nameWidth = 20
+
 // promSeries is one labelled sample from an instant query.
 type promSeries struct {
 	Labels map[string]string
@@ -243,18 +246,18 @@ func (b *Bot) whatspiked(ctx context.Context, arg string) string {
 		if len(now) > 6 {
 			now = now[:6]
 		}
-		body.WriteString("\ncontainer              cpu   1h before\n")
+		body.WriteString("\n" + padName("container", nameWidth) + "    cpu   1h before\n")
 		for _, s := range now {
 			name := s.Labels["name"]
 			was := "—"
 			if v, ok := baseline[name]; ok {
 				was = fmt.Sprintf("%.0f%%", v*100)
 			}
-			// Truncate and pad on the raw name, then escape. Doing it the
-			// other way round can cut an entity in half ("&am"), and padding
-			// an escaped string misaligns the column because Telegram renders
-			// "&amp;" back to a single character.
-			body.WriteString(html.EscapeString(fmt.Sprintf("%-20s", trim(name, 20))) +
+			// Pad on the raw name, then escape. Doing it the other way round
+			// can cut an entity in half ("&am"), and padding an escaped string
+			// misaligns the column because Telegram renders "&amp;" back to a
+			// single character.
+			body.WriteString(html.EscapeString(padName(name, nameWidth)) +
 				fmt.Sprintf(" %5.0f%%   %s\n", s.Value*100, was))
 		}
 	}
@@ -314,6 +317,19 @@ func (b *Bot) whatspiked(ctx context.Context, arg string) string {
 	}
 
 	return "<b>" + html.EscapeString(header) + "</b>\n<pre>" + body.String() + "</pre>"
+}
+
+// padName renders a name in a fixed-width column, measured in runes rather
+// than bytes. trim() cuts to n and then appends an ellipsis, returning n+1
+// characters, so using it here pushed the cpu figure one column right for
+// every name long enough to truncate. The ellipsis is also three bytes but
+// one column, which byte-based padding gets wrong in the other direction.
+func padName(s string, width int) string {
+	r := []rune(s)
+	if len(r) > width {
+		r = append(r[:width-1:width-1], '…')
+	}
+	return string(r) + strings.Repeat(" ", width-len(r))
 }
 
 func min(a, b int) int {
