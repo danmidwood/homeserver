@@ -28,6 +28,48 @@
     name: docker
     state: present
 
+- name: Create the docker drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the resolver-wait helper
+  ansible.builtin.copy:
+    src: wait-for-resolver
+    dest: /usr/local/sbin/wait-for-resolver
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Make Docker wait for a usable resolver before starting containers
+  # network-online.target is satisfied when the link is up, which is not the
+  # same as DNS being usable. On the 25 Aug 2026 reboot NetworkManager-wait-
+  # online exited at 13:09:37 and Docker started in the same second, but
+  # /etc/resolv.conf was not written until 13:09:47. Every container started
+  # in that window inherited a resolver with no upstream at all, and Docker
+  # does not revisit that once a container is running.
+  #
+  # The damage was silent: Alertmanager could not resolve api.telegram.org, so
+  # every alert failed after fifteen retries and no notification reached anyone
+  # for eight hours. Caddy could not reach Let's Encrypt to renew certificates.
+  # Only restarting each container clears it.
+  #
+  # The logic lives in a script rather than inline here because systemd treats
+  # "$" as the start of a variable reference, which mangles the shell
+  # substitutions this needs.
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible. Do not edit on the host.
+      [Service]
+      ExecStartPre=-/usr/local/sbin/wait-for-resolver
+    dest: /etc/systemd/system/docker.service.d/wait-for-resolver.conf
+    owner: root
+    group: root
+    mode: '0644'
+
 - name: Start and enable Docker service
   systemd:
     name: docker

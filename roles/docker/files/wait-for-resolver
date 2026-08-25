@@ -1,0 +1,40 @@
+#!/bin/sh
+# Block until NetworkManager has written /etc/resolv.conf during THIS boot.
+#
+# Docker copies the host resolver into each container as that container
+# starts, and never revisits it afterwards. A container that starts before
+# the resolver is ready is stuck with "NO EXTERNAL NAMESERVERS DEFINED" until
+# something restarts it -- which is how Alertmanager spent eight hours unable
+# to resolve api.telegram.org, silently delivering no alerts at all.
+#
+# Checking that the file merely contains a nameserver line is not enough:
+# /etc/resolv.conf survives reboots, so last boot's file is indistinguishable
+# from a fresh one and the check passes instantly while DNS is still absent.
+# An earlier version of this guard did exactly that and was a no-op. Comparing
+# the file's mtime against the kernel's boot time is what tells them apart.
+#
+# Failure here is deliberately not fatal (the unit calls this with a leading
+# "-"). Starting containers without DNS is bad; refusing to start Docker at
+# all on a headless machine is worse.
+
+TIMEOUT=30
+
+btime=$(awk '/^btime/ { print $2 }' /proc/stat)
+if [ -z "$btime" ]; then
+    echo "wait-for-resolver: no btime in /proc/stat, not waiting" >&2
+    exit 0
+fi
+
+i=0
+while [ "$i" -lt "$TIMEOUT" ]; do
+    mtime=$(stat -c %Y /etc/resolv.conf 2>/dev/null || echo 0)
+    if [ "$mtime" -gt "$btime" ] && grep -q '^nameserver' /etc/resolv.conf; then
+        [ "$i" -gt 0 ] && echo "wait-for-resolver: resolver ready after ${i}s" >&2
+        exit 0
+    fi
+    sleep 1
+    i=$((i + 1))
+done
+
+echo "wait-for-resolver: no resolver after ${TIMEOUT}s; containers may start without DNS" >&2
+exit 1
