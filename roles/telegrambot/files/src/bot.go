@@ -36,6 +36,7 @@ func (b *Bot) help() string {
 	sb.WriteString("/backup_now — start a backup now\n")
 	sb.WriteString("/restart &lt;service&gt; — restart one app container\n")
 	sb.WriteString("/doorbell [today|yesterday|YYYY-MM-DD] [all] — doorbell clips\n")
+	sb.WriteString("/whatspiked [HH:MM] — explain a load or temperature spike\n")
 	sb.WriteString("/help — this message\n\n")
 	sb.WriteString("Send a photo or a document to save it to the inbox (20 MB limit).\n\n")
 
@@ -93,6 +94,8 @@ func (b *Bot) Handle(ctx context.Context, m *Message) string {
 		return b.restart(ctx, arg)
 	case "/doorbell":
 		return b.doorbell(ctx, m.Chat.ID, arg)
+	case "/whatspiked":
+		return b.whatspiked(ctx, arg)
 	case "/help", "/start":
 		return b.help()
 	default:
