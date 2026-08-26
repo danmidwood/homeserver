@@ -13,3 +13,11 @@
 # are the record. Keeping them invites the opposite of documentation — three of
 # them described building Diun in detail, months after it was replaced.
 /docs/superpowers/plans/
+
+# The bot is built from source on the host, so no binary belongs here. "go
+# build" in a main package drops the compiled result into the source directory
+# under the module name, and it was committed that way once: a 10MB binary
+# that shipped to the server on every deploy and was modified by every local
+# test run. The role installs the Go toolchain and builds on the host for
+# exactly this reason.
+/roles/telegrambot/files/src/telegrambot
