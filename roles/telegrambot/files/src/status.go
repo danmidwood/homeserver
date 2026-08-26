@@ -113,6 +113,30 @@ func firingAlertNames(ctx context.Context, base string) ([]string, int, error) {
 	return out, total, nil
 }
 
+// humanAge renders an age in the largest unit that still says something
+// useful. Reporting whole hours meant a backup that had just succeeded showed
+// as "0h ago", which reads like a missing value at exactly the moment the
+// reader wants confirmation it worked.
+//
+// A negative age means the recorded timestamp is in the future -- clock skew,
+// not a backup from the future -- and is reported as "just now" rather than
+// as a negative number, which would look like a fault in the bot.
+func humanAge(seconds float64) string {
+	if seconds < 60 {
+		return "just now"
+	}
+	// Truncated, not rounded: "2m ago" should mean at least two minutes have
+	// passed. Rounding to nearest turned 3599 seconds into "60m ago".
+	n := int64(seconds)
+	if seconds < 3600 {
+		return fmt.Sprintf("%dm ago", n/60)
+	}
+	if seconds < 48*3600 {
+		return fmt.Sprintf("%dh ago", n/3600)
+	}
+	return fmt.Sprintf("%dd ago", n/86400)
+}
+
 func (b *Bot) status(ctx context.Context) string {
 	var lines []string
 
@@ -138,8 +162,8 @@ func (b *Bot) status(ctx context.Context) string {
 		lines = append(lines, "💾 "+strings.Join(disk, "   "))
 	}
 
-	if hrs, err := promScalar(ctx, b.PromURL, `(time()-restic_backup_last_success_timestamp_seconds)/3600`); err == nil {
-		lines = append(lines, fmt.Sprintf("🕒 backup %.0fh ago", hrs))
+	if age, err := promScalar(ctx, b.PromURL, `time()-restic_backup_last_success_timestamp_seconds`); err == nil {
+		lines = append(lines, "🕒 backup "+humanAge(age))
 	} else {
 		lines = append(lines, "❓ backup: no timestamp recorded")
 	}

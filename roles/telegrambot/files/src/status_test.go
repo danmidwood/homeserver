@@ -134,3 +134,37 @@ func TestStatusCountsAlertsNotNames(t *testing.T) {
 		t.Errorf("reported the name count as the alert count: %q", got)
 	}
 }
+
+// A backup that has just run rendered as "0h ago", which reads like a missing
+// value rather than a fresh success -- the one case where the reader most
+// wants confirmation that it worked.
+func TestHumanAge(t *testing.T) {
+	for _, tc := range []struct {
+		seconds float64
+		want    string
+	}{
+		{0, "just now"},
+		{45, "just now"},
+		{60, "1m ago"},
+		{90, "1m ago"},
+		{600, "10m ago"},
+		{3599, "59m ago"},
+		{3600, "1h ago"},
+		{7200, "2h ago"},
+		{47 * 3600, "47h ago"},
+		{48 * 3600, "2d ago"},
+		{72 * 3600, "3d ago"},
+	} {
+		if got := humanAge(tc.seconds); got != tc.want {
+			t.Errorf("humanAge(%v) = %q, want %q", tc.seconds, got, tc.want)
+		}
+	}
+}
+
+// A clock skew or a timestamp from the future must not render as a negative
+// age, which would look like a bug in the bot rather than in the data.
+func TestHumanAgeHandlesFutureTimestamps(t *testing.T) {
+	if got := humanAge(-120); got != "just now" {
+		t.Errorf("humanAge(-120) = %q, want %q", got, "just now")
+	}
+}
