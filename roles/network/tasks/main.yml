@@ -50,11 +50,11 @@
   loop_control:
     label: "{{ item.id }}"
   no_log: true
-  notify: Reload NetworkManager
+  notify: Reload NetworkManager connections
 
 - name: Remove wifi profiles this host should not keep
   ansible.builtin.file:
     path: "/etc/NetworkManager/system-connections/{{ item }}.nmconnection"
     state: absent
   loop: "{{ wifi_networks_absent }}"
-  notify: Reload NetworkManager
+  notify: Reload NetworkManager connections
