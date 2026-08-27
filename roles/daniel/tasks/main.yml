@@ -74,8 +74,36 @@
     user: daniel
     key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH3z/AM35YYthOkWQIXgJzqByoTI3u2W9H0J23ytEQBN daniel@work-mbp"
 
-- name: Add home macbook public key to authorized_keys
-  ansible.posix.authorized_key:
-    user: daniel
-    key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC4AB2i0g/c1DAlyEocNc2xqsdLD4QsvrBph1Utc6rUoNARj2xLgOHRztEeRRAHymDdljUW+XkNeYGhCtqswzyFWI0dkDou8O2AafE2kBkdwcN57rEo0/u16tzlTWs40GZUC7x2wNFEj9feiA44NPixiOzaMkBJpUXO5/pSHOOcLPejQLeog+lLf/sa0i07Ab5Czcs2blaO+RZCS+L+3Rgsdrkr25roNhClYMGawe+psFzKVR7kGcooSjouo98s7MwlHOefZJxpX2vjS4WN1JkvF5D4T+LYPfUbxHLRtnKvxjpIZsdHLOBFmHXhSAFAK5sHlESvYW6IkCBYhZteFrqx daniel@home-mbp"
+- name: Configure git user name
+  community.general.git_config:
+    name: user.name
+    scope: global
+    value: "Daniel Midwood"
+  become_user: daniel
+
+- name: Configure git user email
+  community.general.git_config:
+    name: user.email
+    scope: global
+    value: "dan@danmidwood.com"
+  become_user: daniel
+
+- name: Generate a deploy key for pushing this repo to GitHub
+  ansible.builtin.command:
+    cmd: ssh-keygen -t ed25519 -f /home/daniel/.ssh/id_ed25519_github -N "" -C "daniel@xps"
+    creates: /home/daniel/.ssh/id_ed25519_github
+  become_user: daniel
+
+- name: Ensure github.com uses the deploy key
+  ansible.builtin.blockinfile:
+    path: /home/daniel/.ssh/config
+    create: true
+    owner: daniel
+    group: daniel
+    mode: '0600'
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - github.com"
+    block: |
+      Host github.com
+        IdentityFile /home/daniel/.ssh/id_ed25519_github
+        IdentitiesOnly yes
 
