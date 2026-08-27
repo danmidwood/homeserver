@@ -147,6 +147,41 @@ existing Planka and Immich dumps. Copying a live SQLite file risks capturing a
 torn write; the backup script already solves exactly this problem for Postgres,
 and this follows that precedent rather than inventing a second approach.
 
+## Decisions taken during implementation
+
+Four things came up that the design had not settled. Each was decided on the
+reasoning below rather than deferred.
+
+**Portainer was dropped from the scope, taking it from six applications to
+five.** The design assumed it sat behind Caddy like everything else. It does
+not: it publishes 8000 and 9000 directly onto the host and has no public name,
+so it is unreachable from outside the house. The goal of this work was a second
+factor in front of things exposed to the internet, and Portainer is not one of
+them. Including it would have meant either giving it a Caddy vhost and a public
+DNS name — enlarging the attack surface to add a control that guards nothing —
+or registering a plaintext `http://` callback. Tailscale is the better answer
+for reaching it remotely.
+
+**The account email is `danieljamesmidwood@gmail.com`, not
+`dan@danmidwood.com`.** These applications link an incoming OIDC login to an
+existing account by email address. The Planka role already declares its admin
+account with the Gmail address, so using the other one would have created a
+second, empty Planka account rather than signing into the existing one. The
+address is now `authelia_user_email` in the role's defaults. It is an account
+key, not a contact address, and the Immich account should be checked against it
+before its first OIDC login.
+
+**The account password was generated rather than left unset.** `authelia_password`
+was empty, and an Authelia with no usable account could not have been tested at
+all. Following the wifi and Tailscale roles, the role reports rather than fails,
+generating a random password into `secrets/initial_password.txt`. Setting
+`authelia_password` and `authelia_password_salt` later replaces it.
+
+**Kavita's client is configured on Authelia's side but not on Kavita's.** Its
+OIDC settings live in its own database with no file or environment equivalent,
+so that half is a manual step. Authelia will accept the client as soon as
+Kavita is pointed at it.
+
 ## Verification order
 
 1. Authelia container healthy, portal reachable
