@@ -1,0 +1,8 @@
+- name: Restart journald
+  # Restarting the journal is safe: systemd-journald hands its sockets back to
+  # PID 1 across a restart, so messages logged during it are buffered rather
+  # than lost. Without the restart the new size cap is not applied until the
+  # next reboot, and this host is expected to stay up for months.
+  ansible.builtin.systemd:
+    name: systemd-journald
+    state: restarted
