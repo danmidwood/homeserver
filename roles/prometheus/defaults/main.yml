@@ -33,6 +33,10 @@ smart_devices:
 monitored_containers:
   - actual_budget
   - alertmanager
+  # Six applications delegate their login to this one container. If it stops,
+  # none of them can be signed into, so its absence matters more than any
+  # single application's here.
+  - authelia
   - blackbox
   - cadvisor
   - caddy
@@ -57,6 +61,9 @@ monitored_containers:
 # down and EndpointDown would fire forever. /identity is unauthenticated and
 # returns 200 with the server's machineIdentifier.
 monitored_endpoints:
+  # The login page every other endpoint here now depends on. It answers 200
+  # unauthenticated, so it needs no special path the way plex does.
+  - https://auth.home.danmidwood.com
   - https://books.home.danmidwood.com
   - https://budget.home.danmidwood.com
   - https://grafana.home.danmidwood.com

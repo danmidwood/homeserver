@@ -14,6 +14,9 @@
     name:
       - restic
       - jq
+      # sqlite3 takes the consistent snapshot of Authelia's database that the
+      # backup script depends on.
+      - sqlite
     state: present
 
 - name: Create restic credentials directory

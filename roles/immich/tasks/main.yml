@@ -67,6 +67,27 @@
     networks:
       - name: immich_network
 
+- name: Create the Immich config directory
+  # The DIRECTORY is bind-mounted rather than the file, per the rule the caddy
+  # and alertmanager roles document: a single-file bind mount pins Docker to
+  # one inode that template:'s atomic rename would orphan.
+  ansible.builtin.file:
+    path: /mnt/storage/config/immich/conf
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Template the Immich configuration
+  # no_log because the rendered file carries the OIDC client secret.
+  ansible.builtin.template:
+    src: immich-config.json.j2
+    dest: /mnt/storage/config/immich/conf/immich.json
+    owner: root
+    group: root
+    mode: '0644'
+  no_log: true
+
 - name: Pull the Immich Docker image
   community.docker.docker_image_pull:
     name: "ghcr.io/immich-app/immich-server:v3.1.0@sha256:b434cb9287eea1471c9974845914d4dd328c9c2d652e446ed4930f99944f0ceb"
@@ -95,6 +116,7 @@
     volumes:
       - /mnt/tmdas/immich/upload:/usr/src/app/upload
       - /etc/localtime:/etc/localtime:ro
+      - /mnt/storage/config/immich/conf:/config:ro
     comparisons:
       # Without this, removing a volume from the list above does nothing at all.
       # docker_container defaults to allow_more_present for volumes, meaning a
@@ -112,6 +134,9 @@
       DB_USERNAME: "immich"
       DB_PASSWORD: "{{ immich_db_password }}"
       REDIS_HOSTNAME: "immich-redis"
+      # Points at the file mounted above. Immich reads it at startup and marks
+      # the settings it contains read-only in the admin interface.
+      IMMICH_CONFIG_FILE: /config/immich.json
 
 - name: Pull the Immich machine learning image
   community.docker.docker_image_pull:

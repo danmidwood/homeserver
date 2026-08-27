@@ -74,3 +74,14 @@
       DEFAULT_ADMIN_EMAIL: danieljamesmidwood@gmail.com
       DEFAULT_ADMIN_NAME: Daniel Midwood
       DEFAULT_ADMIN_USERNAME: daniel
+      # Single sign-on against Authelia. The local admin account above stays
+      # usable on purpose, so a broken OIDC client costs an inconvenience
+      # rather than access to the board.
+      OIDC_ISSUER: "{{ authelia_url }}"
+      OIDC_CLIENT_ID: "planka"
+      OIDC_CLIENT_SECRET: "{{ authelia_client_secret.planka }}"
+      OIDC_SCOPES: "openid profile email"
+      # Planka matches an existing account by email, so this must be the
+      # address in Authelia's user database or a second account appears.
+      OIDC_EMAIL_ATTRIBUTE: "email"
+      OIDC_NAME_ATTRIBUTE: "name"

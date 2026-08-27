@@ -20,16 +20,24 @@
   # `tailscale status` exits non-zero when the node is logged out, which is a
   # normal state here rather than a failure, so the return code is ignored and
   # the decision is made from BackendState below.
+  #
+  # check_mode: false because this only reads. Left to the default it is
+  # skipped during a --check run, which produces no output for the next task to
+  # parse and fails the whole dry run.
   ansible.builtin.command: tailscale status --json
   register: tailscale_status
   changed_when: false
   failed_when: false
+  check_mode: false
 
 - name: Decide whether this node is already on the tailnet
+  # The length test guards the parse rather than merely tidying it: Jinja's
+  # `and` short-circuits, so from_json is never reached when the command
+  # produced nothing.
   ansible.builtin.set_fact:
     tailscale_connected: >-
-      {{ (tailscale_status.stdout | from_json).BackendState | default('') == 'Running'
-         if tailscale_status.rc == 0 else false }}
+      {{ (tailscale_status.stdout | default('') | trim | length > 0)
+         and ((tailscale_status.stdout | from_json).BackendState | default('') == 'Running') }}
 
 - name: Report when Tailscale has no way to authenticate
   # Deliberately not an assert, matching the wifi profiles in the network role.

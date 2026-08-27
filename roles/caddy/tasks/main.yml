@@ -51,6 +51,10 @@
   copy:
     dest: /mnt/storage/config/caddy/conf/Caddyfile
     content: |
+      auth.home.danmidwood.com {
+        reverse_proxy authelia:9091
+      }
+
       budget.home.danmidwood.com {
         reverse_proxy actual_budget:5006
       }

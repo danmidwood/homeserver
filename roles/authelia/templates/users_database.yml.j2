@@ -1,0 +1,13 @@
+# Managed by Ansible. Do not edit on the host.
+#
+# One user, because there is one person. Groups are declared anyway: several of
+# the applications map an OIDC group claim onto their own roles, and an empty
+# claim is harder to debug than a populated one.
+users:
+  daniel:
+    disabled: false
+    displayname: 'Daniel Midwood'
+    password: '{{ authelia_password_hash }}'
+    email: '{{ authelia_user_email }}'
+    groups:
+      - admins

@@ -1,0 +1,61 @@
+# Pinned exactly as every other image in this repository: a version tag for
+# imagewatch to compare against, and a digest so the reference cannot move.
+authelia_image: "authelia/authelia:4.39.20@sha256:1b363e9279e742397966333f364e0876ae02bf5c876de73e83af6d48c57ff51b"
+
+authelia_config_dir: /mnt/storage/config/authelia
+
+# The parent of every application's subdomain. The session cookie is scoped
+# here, and that scope is what makes one login work across all of them.
+authelia_cookie_domain: home.danmidwood.com
+authelia_url: "https://auth.home.danmidwood.com"
+
+# The address every application uses to recognise an incoming OIDC login as an
+# existing account. This is not a contact address and changing it is not
+# cosmetic: Planka, Immich and Grafana all match on email, so an address that
+# differs from the one already on those accounts creates a second, empty
+# account instead of signing into the existing one. It matches the Planka admin
+# account declared in the planka role.
+authelia_user_email: danieljamesmidwood@gmail.com
+
+# Every application that authenticates against Authelia, with the callback its
+# OIDC library expects. Adding one here generates its client secret on the next
+# run and adds it to Authelia's configuration; wiring the application's own end
+# is separate, and for Kavita and Portainer is done by hand in their web
+# interfaces.
+authelia_clients:
+  - id: grafana
+    name: Grafana
+    redirect_uris:
+      - https://grafana.home.danmidwood.com/login/generic_oauth
+  - id: planka
+    name: Planka
+    redirect_uris:
+      - https://projectboard.home.danmidwood.com/oidc-callback
+  - id: actualbudget
+    name: Actual Budget
+    redirect_uris:
+      - https://budget.home.danmidwood.com/openid/callback
+  - id: immich
+    name: Immich
+    # Immich needs all three: the web client, the mobile application's deep
+    # link, and the desktop application's loopback listener. Omitting the
+    # mobile one is the usual way to discover it is required.
+    redirect_uris:
+      - https://photos.home.danmidwood.com/auth/login
+      - https://photos.home.danmidwood.com/user-settings
+      - app.immich:///oauth-callback
+  - id: kavita
+    name: Kavita
+    # ASP.NET Core's convention, not Kavita's invention. The sign-out callback
+    # is listed too, or logging out lands on an error page.
+    redirect_uris:
+      - https://books.home.danmidwood.com/signin-oidc
+      - https://books.home.danmidwood.com/signout-callback-oidc
+
+# Portainer is deliberately absent. Unlike every application above it does not
+# sit behind Caddy at all -- it publishes 8000 and 9000 straight onto the host
+# and is reachable only from the LAN, so the reason for this work (a second
+# factor in front of things exposed to the internet) does not apply to it.
+# Bringing it in would mean first giving it a Caddy vhost and a public name, or
+# registering a plaintext http:// callback, and neither is worth doing to a
+# service that is already unreachable from outside the house.

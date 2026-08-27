@@ -1,0 +1,116 @@
+# Managed by Ansible. Do not edit on the host.
+theme: dark
+
+server:
+  address: 'tcp://0.0.0.0:9091'
+
+log:
+  level: info
+  # Left on stdout so `docker logs authelia` is the single place to look, the
+  # same as every other container here.
+  format: text
+
+totp:
+  # Shown in the authenticator application beside the code, so it needs to say
+  # which system the code is for rather than which container generated it.
+  issuer: {{ authelia_cookie_domain }}
+
+webauthn:
+  disable: false
+  display_name: {{ authelia_cookie_domain }}
+  selection_criteria:
+    # Passkeys are the intended factor here. `preferred` asks the authenticator
+    # to verify the user (biometric or PIN) so the passkey counts as two
+    # factors on its own, which is what allows TOTP to be a fallback rather
+    # than a mandatory second step.
+    user_verification: preferred
+
+authentication_backend:
+  # A file rather than LDAP: there is one user, and a directory server would be
+  # a second thing to run, back up and keep available in front of everything
+  # else.
+  file:
+    path: /config/users_database.yml
+    password:
+      # sha2crypt, because the hash is produced by Ansible's
+      # password_hash('sha512', salt) filter -- the same filter and the same
+      # form already used for the daniel account in the daniel role.
+      algorithm: sha2crypt
+      sha2crypt:
+        variant: sha512
+
+access_control:
+  # Nothing reaches an application without a second factor. Only Authelia's own
+  # endpoints are exempt, below.
+  default_policy: two_factor
+  rules:
+    # Requiring authentication to reach the login page would be circular.
+    - domain: 'auth.{{ authelia_cookie_domain }}'
+      policy: bypass
+
+session:
+  name: authelia_session
+  same_site: lax
+  cookies:
+    # Scoped to the parent domain rather than to each application, which is the
+    # mechanism that makes one login work across all of them.
+    - domain: {{ authelia_cookie_domain }}
+      authelia_url: {{ authelia_url }}
+      expiration: 1h
+      inactivity: 15m
+      remember_me: 30d
+
+regulation:
+  # These services are on the public internet and the login page is reachable
+  # by anyone who finds the name.
+  max_retries: 3
+  find_time: 2m
+  ban_time: 12h
+
+storage:
+  encryption_key: {{ authelia_secrets.storage_encryption_key }}
+  local:
+    path: /data/db.sqlite3
+
+notifier:
+  # A file rather than SMTP. Registration and reset links are needed a handful
+  # of times a year, always while sitting at a machine that can read the file,
+  # and the alternative is storing mail credentials that must keep working for
+  # the rare moment they are wanted.
+  filesystem:
+    filename: /data/notification.txt
+
+identity_validation:
+  reset_password:
+    jwt_secret: {{ authelia_secrets.jwt_secret }}
+
+identity_providers:
+  oidc:
+    hmac_secret: {{ authelia_secrets.oidc_hmac_secret }}
+    jwks:
+      - key_id: 'main'
+        algorithm: 'RS256'
+        use: 'sig'
+        key: |
+{{ authelia_secrets.oidc_key | indent(10, true) }}
+    clients:
+{% for client in authelia_clients %}
+      - client_id: '{{ client.id }}'
+        client_name: '{{ client.name }}'
+        client_secret: '{{ authelia_client_hash[client.id] }}'
+        public: false
+        authorization_policy: 'two_factor'
+        require_pkce: true
+        pkce_challenge_method: 'S256'
+        redirect_uris:
+{% for uri in client.redirect_uris %}
+          - '{{ uri }}'
+{% endfor %}
+        scopes:
+          - 'openid'
+          - 'profile'
+          - 'email'
+          - 'groups'
+        userinfo_signed_response_alg: 'none'
+        token_endpoint_auth_method: 'client_secret_post'
+{% endfor %}

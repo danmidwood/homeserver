@@ -14,6 +14,9 @@
     - makemkv
     - docker
     - caddy
+    # Before every application that authenticates against it: the role sets
+    # facts holding the per-client secrets, which those roles read.
+    - authelia
     - cadvisor
     - blackbox
     - imagewatch

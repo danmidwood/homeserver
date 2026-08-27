@@ -7,6 +7,12 @@ METRICS_FILE="${TEXTFILE_DIR}/restic_backup.prom"
 
 START=$(date +%s)
 
+# Authelia's database holds the registered passkeys and TOTP devices. Copying
+# the live file risks catching a torn write, so it is dumped through sqlite3's
+# .backup, which takes a consistent snapshot of a database being written to --
+# the same reason the Postgres databases below go through pg_dump.
+sqlite3 /mnt/storage/config/authelia/data/db.sqlite3 ".backup '${DUMP_DIR}/authelia.sqlite3'"
+
 docker exec planka-postgres pg_dump -U postgres planka > "${DUMP_DIR}/planka.sql"
 docker exec -e PGPASSWORD="{{ immich_db_password }}" immich-postgres pg_dump -U immich immich > "${DUMP_DIR}/immich.sql"
 

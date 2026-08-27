@@ -1,0 +1,195 @@
+- name: Pull the Authelia image
+  community.docker.docker_image_pull:
+    name: "{{ authelia_image }}"
+    pull: not_present
+
+- name: Create the Authelia directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ authelia_config_dir }}", mode: '0755' }
+    # The DIRECTORY is bind-mounted, not the files, for the reason spelled out
+    # in the caddy and alertmanager roles: a single-file bind mount pins Docker
+    # to one inode, and template: writes atomically via a rename that orphans
+    # it, leaving the container reading a file the host no longer has.
+    - { path: "{{ authelia_config_dir }}/conf", mode: '0755' }
+    - { path: "{{ authelia_config_dir }}/data", mode: '0700' }
+    - { path: "{{ authelia_config_dir }}/secrets", mode: '0700' }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Install the secret generation script
+  ansible.builtin.copy:
+    src: generate-secrets.sh
+    dest: /usr/local/bin/authelia-generate-secrets.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Generate the Authelia secrets
+  # creates: is doing real work here, not merely saving time. Regenerating
+  # storage_encryption_key leaves every registered passkey and TOTP device in
+  # the database undecryptable, so this must run exactly once in the lifetime
+  # of the deployment. The secrets directory is in backup_paths, so a rebuild
+  # restores these rather than minting new ones.
+  ansible.builtin.command:
+    argv: "{{ ['/usr/local/bin/authelia-generate-secrets.sh', authelia_config_dir + '/secrets', authelia_image] + (authelia_clients | map(attribute='id') | list) }}"
+    creates: "{{ authelia_config_dir }}/secrets/storage_encryption_key"
+
+- name: Read the Authelia scalar secrets
+  ansible.builtin.slurp:
+    src: "{{ authelia_config_dir }}/secrets/{{ item }}"
+  loop:
+    - session_secret
+    - storage_encryption_key
+    - jwt_secret
+    - oidc_hmac_secret
+    - oidc.key
+  register: authelia_scalars
+  no_log: true
+
+- name: Read the plaintext client secrets
+  # The plaintext form each application is configured with. Consumed by the
+  # grafana, planka, actualbudget and immich roles, which run after this one.
+  ansible.builtin.slurp:
+    src: "{{ authelia_config_dir }}/secrets/clients/{{ item.id }}.secret"
+  loop: "{{ authelia_clients }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: authelia_plaintexts
+  no_log: true
+
+- name: Read the hashed client secrets
+  # The digest form Authelia stores, so no recoverable copy of a client secret
+  # exists in its configuration file.
+  ansible.builtin.slurp:
+    src: "{{ authelia_config_dir }}/secrets/clients/{{ item.id }}.hash"
+  loop: "{{ authelia_clients }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: authelia_hashes
+  no_log: true
+
+- name: Assemble the secrets into one structure
+  # Everything downstream reads authelia_secrets, so the on-disk layout of the
+  # generated directory is described in exactly one place.
+  ansible.builtin.set_fact:
+    authelia_secrets: >-
+      {{ dict(authelia_scalars.results | map(attribute='item') | map('regex_replace', '\.key$', '_key')
+              | zip(authelia_scalars.results | map(attribute='content') | map('b64decode'))) }}
+    authelia_client_secret: >-
+      {{ dict(authelia_clients | map(attribute='id')
+              | zip(authelia_plaintexts.results | map(attribute='content') | map('b64decode') | map('trim'))) }}
+    authelia_client_hash: >-
+      {{ dict(authelia_clients | map(attribute='id')
+              | zip(authelia_hashes.results | map(attribute='content') | map('b64decode') | map('trim'))) }}
+  no_log: true
+
+- name: Generate an initial account password when none is configured
+  # Mirrors the wifi and Tailscale roles: report and carry on rather than fail
+  # a playbook that runs many times a day. The hash is generated alongside the
+  # plaintext and both are kept, because password_hash() with a fresh salt on
+  # every run would rewrite the user database and restart the container each
+  # time the playbook ran.
+  when: authelia_password | default('') | length == 0
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    openssl rand -base64 24 | tr -d '\n' > {{ authelia_config_dir }}/secrets/initial_password.txt
+    docker run --rm {{ authelia_image }} authelia crypto hash generate sha2crypt \
+      --variant sha512 \
+      --password "$(cat {{ authelia_config_dir }}/secrets/initial_password.txt)" \
+      | sed 's/^Digest: //' > {{ authelia_config_dir }}/secrets/initial_password_hash
+  args:
+    executable: /bin/bash
+    creates: "{{ authelia_config_dir }}/secrets/initial_password_hash"
+
+- name: Read the generated account password hash
+  when: authelia_password | default('') | length == 0
+  ansible.builtin.slurp:
+    src: "{{ authelia_config_dir }}/secrets/initial_password_hash"
+  register: authelia_generated_hash
+  no_log: true
+
+- name: Settle on the account password hash
+  ansible.builtin.set_fact:
+    authelia_password_hash: >-
+      {{ (authelia_generated_hash.content | b64decode | trim)
+         if (authelia_password | default('') | length == 0)
+         else (authelia_password | password_hash('sha512', authelia_password_salt)) }}
+  no_log: true
+
+- name: Report where to find the generated password
+  when: authelia_password | default('') | length == 0
+  ansible.builtin.debug:
+    msg: >-
+      authelia_password is empty in user_passwords.yml, so a random password
+      was generated. Read it with
+      `sudo cat {{ authelia_config_dir }}/secrets/initial_password.txt`
+      and sign in as `daniel` at {{ authelia_url }}. Setting authelia_password
+      and authelia_password_salt later replaces it.
+
+- name: Template the Authelia configuration
+  # no_log because the rendered file carries the storage encryption key, the
+  # OIDC signing key and every client secret digest.
+  ansible.builtin.template:
+    src: configuration.yml.j2
+    dest: "{{ authelia_config_dir }}/conf/configuration.yml"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: Restart Authelia
+
+- name: Template the Authelia user database
+  ansible.builtin.template:
+    src: users_database.yml.j2
+    dest: "{{ authelia_config_dir }}/conf/users_database.yml"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: Restart Authelia
+
+- name: Run the Authelia container
+  community.docker.docker_container:
+    name: authelia
+    image: "{{ authelia_image }}"
+    labels:
+      # Checked daily against the registry's tag list for anything newer
+      # than the tag pinned above. The digest pin freezes this exact
+      # reference, so the useful signal is a new tag, not a new digest.
+      imagewatch.enable: "true"
+      # Excluded rather than included, deliberately. An exclude pattern that
+      # is wrong produces visible noise; an include pattern that is wrong
+      # produces silence, and a release that never arrives never announces
+      # itself. These three shapes are provably not releases: per-commit
+      # builds (actualbudget publishes 2883 tags, of which 99.9% are these),
+      # bare commit hashes, and rolling branch builds. Real version tags of
+      # every convention in use here are left untouched, including
+      # v0.9.0.2-ls120, 16-alpine and 1.43.3.10896-cb3ebc72d.
+      imagewatch.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
+    state: started
+    restart_policy: always
+    networks:
+      - name: caddy_network
+    # Deliberately not published to the host. Caddy is the only thing that
+    # should be able to reach it, and it is on the same docker network.
+    env:
+      TZ: "Europe/London"
+      X_AUTHELIA_CONFIG: /config/configuration.yml
+      AUTHELIA_SESSION_SECRET: "{{ authelia_secrets.session_secret | trim }}"
+    volumes:
+      - "{{ authelia_config_dir }}/conf:/config:ro"
+      - "{{ authelia_config_dir }}/data:/data"
+    comparisons:
+      # Without this, removing a volume from the list above does nothing at
+      # all: docker_container defaults to allow_more_present for volumes, so a
+      # running container holding mounts the spec no longer lists is treated as
+      # a match. The immich role carries the same note for the same reason.
+      volumes: strict
+  no_log: true
