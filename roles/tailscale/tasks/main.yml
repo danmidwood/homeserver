@@ -1,0 +1,67 @@
+- name: Install Tailscale
+  # Deliberately a host package rather than a container. tailscaled needs
+  # /dev/net/tun, NET_ADMIN and the host's routing table, so containerising it
+  # means granting all of that plus host networking -- the isolation a
+  # container would buy is given straight back. The deciding reason is
+  # bootstrapping, though: this is the remote access path, so it must not
+  # depend on Docker. A daemon that fails to start would otherwise take away
+  # the access needed to go and fix it.
+  ansible.builtin.package:
+    name: tailscale
+    state: present
+
+- name: Enable and start tailscaled
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Read the current Tailscale state
+  # `tailscale status` exits non-zero when the node is logged out, which is a
+  # normal state here rather than a failure, so the return code is ignored and
+  # the decision is made from BackendState below.
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_status
+  changed_when: false
+  failed_when: false
+
+- name: Decide whether this node is already on the tailnet
+  ansible.builtin.set_fact:
+    tailscale_connected: >-
+      {{ (tailscale_status.stdout | from_json).BackendState | default('') == 'Running'
+         if tailscale_status.rc == 0 else false }}
+
+- name: Report when Tailscale has no way to authenticate
+  # Deliberately not an assert, matching the wifi profiles in the network role.
+  # The main playbook runs many times a day and an auth key is a single-use
+  # bootstrap credential: once this host has registered it holds its own node
+  # key and never needs the auth key again, so the expected steady state is a
+  # blank key and a connected node. Failing on a blank key would turn the
+  # normal case into a broken playbook.
+  when: not tailscale_connected and (tailscale_auth_key | default('') | length == 0)
+  ansible.builtin.debug:
+    msg: >-
+      This host is not on the tailnet and tailscale_auth_key is empty in
+      user_passwords.yml. Generate a key at
+      https://login.tailscale.com/admin/settings/keys and set it, then run
+      the playbook again.
+
+- name: Join the tailnet
+  # --accept-dns=false matters on this host. Tailscale would otherwise take
+  # over /etc/resolv.conf, which NetworkManager owns and points at the
+  # FRITZ!Box -- losing that breaks .fritz.box resolution, and the docker role
+  # already carries a workaround for containers starting before DNS is usable.
+  # Nothing here needs to resolve other tailnet names; this host only needs to
+  # be reachable, which does not depend on accepting their DNS.
+  #
+  # no_log because the auth key grants the right to add machines to the
+  # tailnet, and it would otherwise appear in -v output.
+  when: not tailscale_connected and (tailscale_auth_key | default('') | length > 0)
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - up
+      - "--auth-key={{ tailscale_auth_key }}"
+      - "--hostname={{ tailscale_hostname }}"
+      - "--accept-dns=false"
+  no_log: true
