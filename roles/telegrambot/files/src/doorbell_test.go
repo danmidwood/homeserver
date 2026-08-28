@@ -87,10 +87,10 @@ func TestButtonsStayWithinCallbackLimit(t *testing.T) {
 	}
 }
 
-// A clip with no still cannot be shown on the sheet, so it must not get a
-// button either -- a button with nothing above it is a button for a tile that
-// is not there, which would point at the wrong image.
-func TestClipsWithoutStillsGetNoButton(t *testing.T) {
+// Every clip gets a button, including one with no still: the clip is playable
+// whether or not a picture of it arrived. The sheet draws a placeholder tile in
+// its place, so the button still sits under the tile it plays.
+func TestEveryClipGetsAButton(t *testing.T) {
 	clips := []doorbellClip{
 		{Stamp: "20260822093347", Still: "/x.jpg"},
 		{Stamp: "20260822093508", Still: ""},
@@ -100,8 +100,40 @@ func TestClipsWithoutStillsGetNoButton(t *testing.T) {
 	for _, r := range buttonsFor(clips) {
 		n += len(r)
 	}
-	if n != 2 {
-		t.Errorf("got %d buttons, want 2 (the still-less clip must be skipped)", n)
+	if n != 3 {
+		t.Errorf("got %d buttons, want 3 (the still-less clip must still be playable)", n)
+	}
+}
+
+// One tile per clip regardless of how many stills decoded, or the buttons
+// beneath the sheet stop lining up with the pictures above them.
+func TestSheetDrawsATilePerClipIncludingPlaceholders(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "good.jpg")
+	writeTestJPEG(t, good, 640, 360)
+	out := filepath.Join(dir, "sheet.jpg")
+
+	// Two real stills and two clips without one.
+	placed, err := buildSheet([]string{good, "", good, ""}, out)
+	if err != nil {
+		t.Fatalf("buildSheet: %v", err)
+	}
+	if placed != 2 {
+		t.Errorf("reported %d pictures, want 2", placed)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	cfg, err := jpeg.DecodeConfig(f)
+	if err != nil {
+		t.Fatalf("sheet is not a valid jpeg: %v", err)
+	}
+	// Four tiles across, so the sheet must be full width even though only two
+	// of them carried a picture.
+	if want := 4*tileWidth + 5*tilePad; cfg.Width != want {
+		t.Errorf("sheet is %dpx wide, want %d (four tiles)", cfg.Width, want)
 	}
 }
 
@@ -218,5 +250,58 @@ func writeTestJPEG(t *testing.T, path string, w, h int) {
 	defer f.Close()
 	if err := jpeg.Encode(f, img, nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A still's filename timestamp can land either side of its clip's. The archive
+// has stills at +4, +3 and -3 seconds relative to the clip they belong to, so
+// matching only forwards silently drops every event whose still was stamped
+// first.
+func TestStillMatchesWhenStampedBeforeItsClip(t *testing.T) {
+	clips := []doorbellClip{
+		{Stamp: "20260828100138"}, // its still is 3s EARLIER
+		{Stamp: "20260828054217"}, // its still is 4s later
+	}
+	stills := []string{
+		"/a/Doorbell_00_20260828054221.jpg",
+		"/a/Doorbell_00_20260828100135.jpg",
+	}
+	assignStills(clips, stills)
+
+	if clips[0].Still == "" {
+		t.Error("clip 10:01:38 got no still; 10:01:35 is 3s earlier and belongs to it")
+	}
+	if clips[1].Still == "" {
+		t.Error("clip 05:42:17 got no still; 05:42:21 is 4s later and belongs to it")
+	}
+	if clips[0].Still != "" && clips[0].Still == clips[1].Still {
+		t.Error("both clips claimed the same still")
+	}
+}
+
+// A still far from any clip belongs to a different event and must not be
+// borrowed.
+func TestDistantStillIsNotBorrowed(t *testing.T) {
+	clips := []doorbellClip{{Stamp: "20260828132547"}}
+	stills := []string{"/a/Doorbell_00_20260828132517.jpg"} // 30s earlier
+	assignStills(clips, stills)
+	if clips[0].Still != "" {
+		t.Errorf("clip claimed a still 30s away: %q", clips[0].Still)
+	}
+}
+
+// The caption counted every clip found while the sheet and buttons only ever
+// showed the ones with a still, so /doorbell reported 8 and displayed 3.
+func TestCaptionReportsWhatIsActuallyShown(t *testing.T) {
+	day := time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC)
+
+	got := doorbellCaption(day, 8, 4, 0, false)
+	if !strings.Contains(got, "8") || !strings.Contains(got, "4") {
+		t.Errorf("caption %q should say both how many were found and how many are shown", got)
+	}
+
+	full := doorbellCaption(day, 4, 4, 0, false)
+	if strings.Contains(full, "no still") || strings.Contains(full, "without") {
+		t.Errorf("caption %q should not qualify a complete set", full)
 	}
 }

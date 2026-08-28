@@ -104,26 +104,56 @@ func probeDuration(ctx context.Context, path string) float64 {
 	return v
 }
 
-// collectClips gathers a day's clips, their durations, and the still that
-// belongs to each.
+// stillWindow is how far apart, in seconds, a clip's filename timestamp and
+// its still's may sit and still be the same event. The camera stamps the two
+// within a few seconds of each other in either order; the archive holds pairs
+// at +4, +3 and -3. Ten is comfortably wider than any real pair and narrower
+// than the gap to a neighbouring event.
+const stillWindow = 10
+
+// assignStills fills in the Still of each clip it can pair with one.
 //
-// Stills are matched on the timestamp in the filename, not on modification
-// time. The still is uploaded BEFORE its clip, being roughly ten times
-// smaller, and the gap between the two uploads grows with the size of the
-// video -- so upload time is not a usable key. Filename timestamps are the
-// event time and sit a consistent five to seven seconds apart.
+// Pairing is on the timestamp in the filename, not modification time. The
+// still is uploaded before its clip, being roughly ten times smaller, and the
+// gap between the two uploads grows with the size of the video -- so upload
+// time is not a usable key.
 //
 // Each still is claimed by at most one clip. Without that, a clip whose own
 // still failed to upload borrows one from a neighbouring clip and shows a
 // different event entirely, which is worse than showing none.
-func collectClips(ctx context.Context, day time.Time, minDuration float64) []doorbellClip {
-	stills := findDoorbellFiles(day, ".jpg")
+func assignStills(clips []doorbellClip, stills []string) {
 	stillSecs := make([]int, len(stills))
 	for i, s := range stills {
 		stillSecs[i] = secondsOfDay(stampOf(s))
 	}
 	claimed := make([]bool, len(stills))
 
+	for i := range clips {
+		clipSec := secondsOfDay(clips[i].Stamp)
+		best := stillWindow + 1
+		bestIdx := -1
+		for j := range stills {
+			if claimed[j] || stillSecs[j] < 0 {
+				continue
+			}
+			gap := stillSecs[j] - clipSec
+			if gap < 0 {
+				gap = -gap
+			}
+			if gap <= stillWindow && gap < best {
+				best, bestIdx = gap, j
+			}
+		}
+		if bestIdx >= 0 {
+			claimed[bestIdx] = true
+			clips[i].Still = stills[bestIdx]
+		}
+	}
+}
+
+// collectClips gathers a day's clips, their durations, and the still that
+// belongs to each.
+func collectClips(ctx context.Context, day time.Time, minDuration float64) []doorbellClip {
 	var clips []doorbellClip
 	for _, p := range findDoorbellFiles(day, ".mp4") {
 		if fi, err := os.Stat(p); err != nil || fi.Size() == 0 {
@@ -133,40 +163,19 @@ func collectClips(ctx context.Context, day time.Time, minDuration float64) []doo
 		if d <= 0 || d < minDuration {
 			continue // truncated, or shorter than asked for
 		}
-
-		c := doorbellClip{Path: p, Stamp: stampOf(p), Duration: d}
-		clipSec := secondsOfDay(c.Stamp)
-		best := 16
-		bestIdx := -1
-		for i := range stills {
-			if claimed[i] {
-				continue
-			}
-			gap := stillSecs[i] - clipSec
-			if gap >= 0 && gap < best {
-				best, bestIdx = gap, i
-			}
-		}
-		if bestIdx >= 0 {
-			claimed[bestIdx] = true
-			c.Still = stills[bestIdx]
-		}
-		clips = append(clips, c)
+		clips = append(clips, doorbellClip{Path: p, Stamp: stampOf(p), Duration: d})
 	}
+	assignStills(clips, findDoorbellFiles(day, ".jpg"))
 	return clips
 }
 
-// contactSheet composes the stills into one grid.
-//
-// Tiles carry no captions: the standard library cannot draw text without a font
-// dependency, and the buttons beneath the sheet already give the time of every
-// clip, in the same order and four to a row, so a button sits under its tile.
+// contactSheet composes the stills into one grid, one tile per clip. A clip
+// with no still contributes an empty path, which buildSheet draws as a
+// placeholder so the tiles stay aligned with the buttons beneath them.
 func contactSheet(clips []doorbellClip, dest string) (int, error) {
-	var paths []string
-	for _, c := range clips {
-		if c.Still != "" {
-			paths = append(paths, c.Still)
-		}
+	paths := make([]string, len(clips))
+	for i, c := range clips {
+		paths[i] = c.Still
 	}
 	return buildSheet(paths, dest)
 }
@@ -218,23 +227,30 @@ func (b *Bot) doorbell(ctx context.Context, chatID int64, arg string) string {
 	if err != nil {
 		return "❌ could not build the contact sheet: " + htmlEscape(err.Error())
 	}
-	if shown == 0 {
-		return fmt.Sprintf("%d clips on %s, but none has a still to show.",
-			len(clips), day.Format("2006-01-02"))
-	}
-
-	caption := fmt.Sprintf("%s — %d clips", day.Format("2006-01-02"), len(clips))
-	if minDuration > 0 {
-		caption += fmt.Sprintf(" over %.0fs", minDuration)
-	}
-	if truncated {
-		caption += fmt.Sprintf(" (showing the first %d)", maxButtons)
-	}
+	caption := doorbellCaption(day, len(clips), shown, minDuration, truncated)
 
 	if err := b.TG.SendPhoto(ctx, chatID, sheet, caption, buttonsFor(clips)); err != nil {
 		return "❌ could not send the sheet: " + htmlEscape(err.Error())
 	}
 	return "" // the photo is the reply
+}
+
+// doorbellCaption describes what the sheet holds. found is every clip matching
+// the request; shown is how many reached the sheet, which is lower whenever a
+// clip has no still to draw. Reporting only found claimed eight clips above a
+// picture of three.
+func doorbellCaption(day time.Time, found, shown int, minDuration float64, truncated bool) string {
+	caption := fmt.Sprintf("%s — %d clips", day.Format("2006-01-02"), found)
+	if minDuration > 0 {
+		caption += fmt.Sprintf(" over %.0fs", minDuration)
+	}
+	if truncated {
+		caption += fmt.Sprintf(" (first %d)", maxButtons)
+	}
+	if shown < found {
+		caption += fmt.Sprintf(", %d with a preview", shown)
+	}
+	return caption
 }
 
 // buttonsFor lays the buttons out four to a row, matching the grid columns, so
@@ -243,9 +259,6 @@ func buttonsFor(clips []doorbellClip) [][]InlineButton {
 	var rows [][]InlineButton
 	var row []InlineButton
 	for _, c := range clips {
-		if c.Still == "" {
-			continue
-		}
 		row = append(row, InlineButton{
 			Text: prettyTime(c.Stamp)[:5], // HH:MM is enough to read at a glance
 			Data: "p:" + c.Stamp,
