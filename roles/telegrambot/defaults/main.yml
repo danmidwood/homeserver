@@ -1,8 +1,8 @@
 # Containers the bot may restart. Application services only.
 #
 # Infrastructure is deliberately absent and must stay absent:
-#   caddy                        fronts all seven sites; restarting it takes
-#                                every one down at once
+#   caddy                        fronts every site; restarting it takes them
+#                                all down at once
 #   prometheus, alertmanager     restarting these blinds the monitoring, and
 #                                alertmanager is what delivers the alert saying
 #                                something is wrong. The bot must not be able to
@@ -21,7 +21,6 @@ telegrambot_restartable:
   - kavita
   - planka
   - plex
-  - portainer
   - vaultwarden
 
 telegrambot_inbox_dir: /mnt/storage/telegram-inbox

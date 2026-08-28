@@ -49,7 +49,6 @@ monitored_containers:
   - planka
   - planka-postgres
   - plex
-  - portainer
   - prometheus
   - vaultwarden
 

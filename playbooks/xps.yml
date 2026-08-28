@@ -25,7 +25,6 @@
     - alertmanager
     - prometheus
     - grafana
-    - portainer
     - kavita
     - planka
     - actualbudget
