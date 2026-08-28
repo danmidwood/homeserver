@@ -182,6 +182,43 @@ OIDC settings live in its own database with no file or environment equivalent,
 so that half is a manual step. Authelia will accept the client as soon as
 Kavita is pointed at it.
 
+## What the clients actually turned out to need
+
+The design assumed one client configuration would serve every application.
+That was wrong, and it was wrong three separate times. The specification leaves
+these points optional and each relying party chose differently, so the only way
+to learn any of them was to attempt a login and read Authelia's log.
+
+| Client | Auth method | Scopes | Response modes |
+| --- | --- | --- | --- |
+| Grafana | `client_secret_basic` | default | default |
+| Planka | `client_secret_basic` | default | adds `fragment` |
+| Actual Budget | `client_secret_basic` | default | default |
+| Immich | `client_secret_post` | default | default |
+| Kavita | `client_secret_post` | adds `offline_access` | default |
+
+Three use HTTP Basic and two use the request body, which settles whether there
+was a correct default: there was not. Planka asks for the authorization
+response in the URL fragment. Kavita requests `offline_access`, and Authelia
+refuses any scope a client is not registered for.
+
+Kavita is worth singling out because its failures look different. It uses
+pushed authorization requests, so its parameters are validated before the login
+page is reached: every problem arrives as a 500 up front rather than as a
+failure on the way back, and they surface one at a time.
+
+**Every one of these applications reports the failure uselessly.** Actual
+Budget says `openid-grant-failed`, Planka says "Unknown error, try again
+later", Immich says "Failed to finish oauth". In every case Authelia's own log
+named the mismatch and both sides of it exactly:
+
+```
+docker logs authelia 2>&1 | grep -i error | tail -5
+```
+
+That is the first thing to run when adding the next client, rather than the
+last.
+
 ## Verification order
 
 1. Authelia container healthy, portal reachable
