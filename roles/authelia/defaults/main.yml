@@ -90,6 +90,11 @@ authelia_clients:
     redirect_uris:
       - https://books.home.danmidwood.com/signin-oidc
       - https://books.home.danmidwood.com/signout-callback-oidc
+    # Like Immich, and for the same reason. Kavita also uses pushed
+    # authorization requests, so the mismatch surfaces at the authorization
+    # endpoint rather than the token endpoint: it returns a 500 before the
+    # login page is ever reached, rather than failing on the way back.
+    token_endpoint_auth_method: client_secret_post
 
 # Portainer is deliberately absent. Unlike every application above it does not
 # sit behind Caddy at all -- it publishes 8000 and 9000 straight onto the host
