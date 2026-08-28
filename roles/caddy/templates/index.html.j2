@@ -1,18 +1,30 @@
+{#
+  Managed by Ansible. Do not edit the rendered file on the host: the next
+  playbook run overwrites it. The list of services lives in this role's
+  defaults.
+
+  Every comment in this file is a Jinja comment, so none of them reach the
+  browser. HTML and CSS comments are served verbatim, and an earlier version
+  of this page announced "Managed by Ansible" to anyone who read the source --
+  naming the configuration management tool to a passer-by for no reason. The
+  rendered page should say nothing beyond the links themselves.
+
+  There is deliberately no heading, no footer and no hostname: the page is
+  reachable by anyone who finds the name, and everything else it might say is
+  something an attacker would otherwise have to work for.
+
+  Everything is inline and there are no external requests. This page has to
+  work when it is the thing being used to find out why something else is not
+  working, so it cannot depend on a font host or a CDN being up.
+#}
 <!DOCTYPE html>
-<!-- Managed by Ansible. Do not edit on the host: the next playbook run
-     overwrites it. The list of services lives in the caddy role's defaults. -->
 <html lang="en-GB">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- This page is reachable by anyone who finds the name, so it should not
-     invite indexing on top of that. -->
 <meta name="robots" content="noindex, nofollow">
 <title>home</title>
 <style>
-  /* Everything is inline and there are no external requests. The page has to
-     work when it is the thing being used to find out why something else is
-     not working, so it cannot depend on a font host or a CDN being up. */
   :root {
     --bg: #f6f6f4;
     --card: #ffffff;
@@ -42,13 +54,6 @@
     -webkit-font-smoothing: antialiased;
   }
   main { max-width: 46rem; margin: 0 auto; }
-  h1 {
-    font-size: 1.5rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    margin: 0 0 0.25rem;
-  }
-  .sub { color: var(--muted); margin: 0 0 2.5rem; font-size: 0.9rem; }
   ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
   @media (min-width: 34rem) {
     ul { grid-template-columns: repeat(2, 1fr); }
@@ -70,19 +75,10 @@
   a.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .name { font-weight: 600; margin-bottom: 0.15rem; }
   .desc { color: var(--muted); font-size: 0.875rem; }
-  footer {
-    margin-top: 3rem;
-    padding-top: 1.25rem;
-    border-top: 1px solid var(--line);
-    color: var(--muted);
-    font-size: 0.8rem;
-  }
 </style>
 </head>
 <body>
 <main>
-  <h1>home</h1>
-  <p class="sub">Services running on xps</p>
   <ul>
 {% for link in caddy_homepage_links %}
     <li>
@@ -93,7 +89,6 @@
     </li>
 {% endfor %}
   </ul>
-  <footer>Deployed by Ansible &middot; not everything on this host is listed</footer>
 </main>
 </body>
 </html>
