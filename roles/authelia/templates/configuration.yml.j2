@@ -128,10 +128,9 @@ identity_providers:
           - '{{ mode }}'
 {% endfor %}
         scopes:
-          - 'openid'
-          - 'profile'
-          - 'email'
-          - 'groups'
+{% for scope in client.scopes | default(['openid', 'profile', 'email', 'groups']) %}
+          - '{{ scope }}'
+{% endfor %}
         userinfo_signed_response_alg: 'none'
         token_endpoint_auth_method: '{{ client.token_endpoint_auth_method | default("client_secret_basic") }}'
 {% endfor %}
