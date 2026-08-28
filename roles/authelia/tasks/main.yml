@@ -17,6 +17,12 @@
     # to one inode, and template: writes atomically via a rename that orphans
     # it, leaving the container reading a file the host no longer has.
     - { path: "{{ authelia_config_dir }}/conf", mode: '0755' }
+    # The user database lives apart from the configuration because the two are
+    # owned by different things. configuration.yml is the repository's, and is
+    # mounted read-only. users_database.yml holds the account password, which
+    # Authelia rewrites when it is changed from the portal -- so that directory
+    # is mounted writable, and Ansible only ever seeds it.
+    - { path: "{{ authelia_config_dir }}/users", mode: '0700' }
     - { path: "{{ authelia_config_dir }}/data", mode: '0700' }
     - { path: "{{ authelia_config_dir }}/secrets", mode: '0700' }
   loop_control:
@@ -145,14 +151,34 @@
   no_log: true
   notify: Restart Authelia
 
-- name: Template the Authelia user database
+- name: Seed the Authelia user database
+  # force: no, so this writes the file once and never again. The password in it
+  # is state rather than configuration: Authelia rewrites this file when the
+  # password is changed from the portal, and re-templating it on the next run
+  # would silently revert that change. Ansible establishes the account, and
+  # Authelia owns it from then on.
+  #
+  # To reset the account declaratively, delete the file and run the playbook:
+  # it is recreated from authelia_password, or from a freshly generated one.
   ansible.builtin.template:
     src: users_database.yml.j2
-    dest: "{{ authelia_config_dir }}/conf/users_database.yml"
+    dest: "{{ authelia_config_dir }}/users/users_database.yml"
     owner: root
     group: root
     mode: '0600'
+    force: false
   no_log: true
+  notify: Restart Authelia
+
+- name: Remove the user database from the read-only config directory
+  # Its predecessor. Left there it is an active trap: it looks like the live
+  # user database, is what someone would reach for and edit, and is no longer
+  # mounted into anything. It was also the cause of password changes failing
+  # with "read-only file system", because /config is mounted read-only and
+  # Authelia must write this file to change a password.
+  ansible.builtin.file:
+    path: "{{ authelia_config_dir }}/conf/users_database.yml"
+    state: absent
   notify: Restart Authelia
 
 - name: Run the Authelia container
@@ -185,6 +211,11 @@
       AUTHELIA_SESSION_SECRET: "{{ authelia_secrets.session_secret | trim }}"
     volumes:
       - "{{ authelia_config_dir }}/conf:/config:ro"
+      # Writable, unlike /config: Authelia rewrites the user database when the
+      # password is changed from the portal, and cannot do so on a read-only
+      # mount. It fails with "read-only file system" and reports only "for an
+      # unknown reason" to the user.
+      - "{{ authelia_config_dir }}/users:/users"
       - "{{ authelia_config_dir }}/data:/data"
     comparisons:
       # Without this, removing a volume from the list above does nothing at

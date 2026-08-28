@@ -30,7 +30,9 @@ authentication_backend:
   # a second thing to run, back up and keep available in front of everything
   # else.
   file:
-    path: /config/users_database.yml
+    # In its own writable mount, not alongside configuration.yml: Authelia
+    # rewrites this file on a password change and /config is read-only.
+    path: /users/users_database.yml
     password:
       # sha2crypt, because the hash is produced by Ansible's
       # password_hash('sha512', salt) filter -- the same filter and the same
