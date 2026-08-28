@@ -3,14 +3,11 @@
     name:
       - emacs
       - less
-      # Arch ships no log rotation of its own. Without logrotate, /var/log/btmp
-      # grows forever -- this host's SSH port is reachable from the internet and
-      # collects a failed login every few seconds, which reached 538 MB in the
-      # first two years. logrotate.conf already carries btmp and wtmp rules, so
-      # installing the package and enabling its timer is the whole fix.
+      # Arch ships no log rotation of its own. logrotate.conf already carries
+      # btmp and wtmp rules, which matters because this host's SSH port is
+      # reachable from the internet and btmp grows accordingly.
       - logrotate
-      # Provides paccache, which trims /var/cache/pacman/pkg. Pacman never
-      # prunes that cache on its own; it had reached 5.4 GB.
+      # Provides paccache, which trims /var/cache/pacman/pkg.
       - pacman-contrib
     state: present
 
@@ -66,10 +63,8 @@
     mode: '0755'
 
 - name: Cap the size of the systemd journal
-  # Left at its default the journal sizes itself against the filesystem, which
-  # on this host's 47 GB /var meant it grew to 3.5 GB before anyone looked. The
-  # journal is the first thing read when something breaks, but months of it are
-  # not needed to answer that; 500 MB covers weeks on this machine.
+  # 500 MB covers weeks on this machine. Uncapped, the journal sizes itself
+  # against the filesystem and grows to gigabytes.
   ansible.builtin.copy:
     dest: /etc/systemd/journald.conf.d/size-limit.conf
     content: |
@@ -90,11 +85,9 @@
     mode: '0755'
 
 - name: Cap the space systemd-coredump may consume
-  # A single monerod crash wrote a 1.5 GB compressed core here, which is what
-  # tipped /var into a disk alert. Coredumps stay enabled because they are the
-  # only evidence left after a daemon dies, but an unbounded pile of them is a
-  # worse problem than the crash. ProcessSizeMax discards dumps from processes
-  # too large to be worth keeping, before any of it reaches the disk.
+  # Coredumps are the only evidence left after a daemon dies, so they stay
+  # enabled. ProcessSizeMax discards dumps from very large processes before
+  # any of it reaches the disk; a single monerod core was 1.5 GB compressed.
   ansible.builtin.copy:
     dest: /etc/systemd/coredump.conf.d/size-limit.conf
     content: |
@@ -107,15 +100,15 @@
     mode: '0644'
 
 - name: Enable log rotation
-  # The timer is what actually runs logrotate; the package alone does nothing.
+  # The timer is what runs logrotate.
   ansible.builtin.systemd:
     name: logrotate.timer
     enabled: true
     state: started
 
 - name: Enable the pacman cache trim
-  # Ships with pacman-contrib and runs `paccache -r`, keeping the three most
-  # recent versions of each package so a downgrade is still possible offline.
+  # Runs `paccache -r`, keeping the three most recent versions of each package
+  # so a downgrade is still possible offline.
   ansible.builtin.systemd:
     name: paccache.timer
     enabled: true

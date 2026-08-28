@@ -1,15 +1,6 @@
-# The services listed on the landing page at www.home.danmidwood.com.
-#
-# This is a deliberately separate list rather than one derived from the
-# Caddyfile or from monitored_endpoints, because "is proxied" and "should be
-# advertised on a page anyone reaching the host can read" are different
-# questions. Two vhosts are proxied and intentionally absent here:
-#
-#   passwords  Vaultwarden. A link to the password vault is an invitation to
-#              attack it, and anyone who needs it has it bookmarked or is
-#              using the browser extension, which does not follow links.
-#   auth       Authelia. Nothing is reached by visiting it directly; the
-#              applications redirect there when they need it.
+# The services advertised on the landing page at www.home.danmidwood.com.
+# Maintained by hand, because being proxied and being worth telling a stranger
+# about are different questions.
 caddy_homepage_links:
   - name: Plex
     url: https://plex.home.danmidwood.com

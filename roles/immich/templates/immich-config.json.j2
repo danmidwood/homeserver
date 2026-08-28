@@ -1,7 +1,6 @@
 {
-  "//": "Managed by Ansible. Do not edit on the host. Settings present in this",
-  "//2": "file become read-only in Immich's admin interface, which is the point:",
-  "//3": "the repository is the source of truth for them.",
+  "//": "Managed by Ansible. Settings in this file are read-only in Immich's",
+  "//2": "admin interface.",
   "oauth": {
     "enabled": true,
     "issuerUrl": "{{ authelia_url }}/.well-known/openid-configuration",
@@ -18,9 +17,6 @@
     "mobileRedirectUri": ""
   },
   "passwordLogin": {
-    "//": "Deliberately left enabled. It is the way back in if the OIDC client",
-    "//2": "is misconfigured, and this instance holds the only copy of photos",
-    "//3": "that are not otherwise duplicated anywhere.",
     "enabled": true
   }
 }

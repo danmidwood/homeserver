@@ -37,14 +37,8 @@
     networks:
       - name: caddy_network
     env:
-      # Single sign-on against Authelia. ACTUAL_OPENID_DISCOVERY_URL is used in
-      # preference to spelling out each endpoint, so a change on Authelia's
-      # side is picked up without editing this.
-      #
-      # The existing password login is not disabled: Actual keeps the budget
-      # file's encryption separate from the server login, but losing access to
-      # the server still means losing the web interface, and this is the file
-      # with the household finances in it.
+      # Single sign-on against Authelia. The discovery URL lets each endpoint
+      # be looked up rather than pinned here.
       ACTUAL_OPENID_DISCOVERY_URL: "{{ authelia_url }}"
       ACTUAL_OPENID_CLIENT_ID: "actualbudget"
       ACTUAL_OPENID_CLIENT_SECRET: "{{ authelia_client_secret.actualbudget }}"

@@ -68,9 +68,8 @@
       - name: immich_network
 
 - name: Create the Immich config directory
-  # The DIRECTORY is bind-mounted rather than the file, per the rule the caddy
-  # and alertmanager roles document: a single-file bind mount pins Docker to
-  # one inode that template:'s atomic rename would orphan.
+  # The directory is bind-mounted, not the file, per the rule the caddy role
+  # documents.
   ansible.builtin.file:
     path: /mnt/storage/config/immich/conf
     state: directory
@@ -134,8 +133,7 @@
       DB_USERNAME: "immich"
       DB_PASSWORD: "{{ immich_db_password }}"
       REDIS_HOSTNAME: "immich-redis"
-      # Points at the file mounted above. Immich reads it at startup and marks
-      # the settings it contains read-only in the admin interface.
+      # Read at startup; its settings become read-only in the admin interface.
       IMMICH_CONFIG_FILE: /config/immich.json
 
 - name: Pull the Immich machine learning image

@@ -6,56 +6,38 @@ server:
 
 log:
   level: info
-  # Left on stdout so `docker logs authelia` is the single place to look, the
-  # same as every other container here.
   format: text
 
 totp:
-  # Hardware keys only. A TOTP secret is a shared secret: it sits in an
-  # authenticator application, can be screenshotted or copied, and a
-  # convincing enough login page can be given a valid code by the person
-  # being phished. A WebAuthn credential cannot leave the key, and the key
-  # refuses to sign for the wrong domain, so leaving TOTP enabled would mean
-  # the weakest factor set the security of the whole system.
-  #
-  # Safe to disable here because two keys are registered rather than one, and
-  # no TOTP device ever was. If every key is lost, the way back in is to
-  # delete the rows from webauthn_credentials in the Authelia database, which
-  # returns the account to a password and a fresh registration.
+  # Hardware keys are the only second factor. If every key is lost, deleting
+  # the rows from webauthn_credentials in the Authelia database returns the
+  # account to a password and a fresh registration.
   disable: true
 
 webauthn:
   disable: false
   display_name: {{ authelia_cookie_domain }}
   selection_criteria:
-    # Passkeys are the intended factor here. `preferred` asks the authenticator
-    # to verify the user (biometric or PIN) so the passkey counts as two
-    # factors on its own, which is what allows TOTP to be a fallback rather
-    # than a mandatory second step.
+    # Asks the authenticator to verify the user with a biometric or PIN, so
+    # the key alone proves both possession and knowledge.
     user_verification: preferred
 
 authentication_backend:
-  # A file rather than LDAP: there is one user, and a directory server would be
-  # a second thing to run, back up and keep available in front of everything
-  # else.
   file:
-    # In its own writable mount, not alongside configuration.yml: Authelia
-    # rewrites this file on a password change and /config is read-only.
+    # A writable mount, because Authelia rewrites this file on a password
+    # change.
     path: /users/users_database.yml
     password:
-      # sha2crypt, because the hash is produced by Ansible's
-      # password_hash('sha512', salt) filter -- the same filter and the same
-      # form already used for the daniel account in the daniel role.
+      # Matches the form produced by Ansible's password_hash('sha512', salt).
       algorithm: sha2crypt
       sha2crypt:
         variant: sha512
 
 access_control:
-  # Nothing reaches an application without a second factor. Only Authelia's own
-  # endpoints are exempt, below.
+  # Nothing reaches an application without a second factor.
   default_policy: two_factor
   rules:
-    # Requiring authentication to reach the login page would be circular.
+    # The login page itself must be reachable unauthenticated.
     - domain: 'auth.{{ authelia_cookie_domain }}'
       policy: bypass
 
@@ -63,8 +45,8 @@ session:
   name: authelia_session
   same_site: lax
   cookies:
-    # Scoped to the parent domain rather than to each application, which is the
-    # mechanism that makes one login work across all of them.
+    # Scoped to the parent domain, which is what makes one login work across
+    # every application under it.
     - domain: {{ authelia_cookie_domain }}
       authelia_url: {{ authelia_url }}
       expiration: 1h
@@ -72,8 +54,6 @@ session:
       remember_me: 30d
 
 regulation:
-  # These services are on the public internet and the login page is reachable
-  # by anyone who finds the name.
   max_retries: 3
   find_time: 2m
   ban_time: 12h
@@ -84,10 +64,7 @@ storage:
     path: /data/db.sqlite3
 
 notifier:
-  # A file rather than SMTP. Registration and reset links are needed a handful
-  # of times a year, always while sitting at a machine that can read the file,
-  # and the alternative is storing mail credentials that must keep working for
-  # the rare moment they are wanted.
+  # Registration and reset links are written here, to be read over SSH.
   filesystem:
     filename: /data/notification.txt
 
@@ -98,10 +75,6 @@ identity_validation:
 identity_providers:
   oidc:
     hmac_secret: {{ authelia_secrets.oidc_hmac_secret }}
-# No claims_policies. Authelia 4.39 does not put groups in the ID token unless
-# one is defined, and nothing here needs them: the single account is
-# deliberately a Grafana Viewer, and no other application maps roles from
-# groups. Adding the policy would silently promote that account to Admin.
     jwks:
       - key_id: 'main'
         algorithm: 'RS256'

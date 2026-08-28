@@ -1,4 +1,3 @@
-# The name this host takes on the tailnet. Pinned rather than left to default
-# so the address stays predictable: `ssh daniel@xps` works from any device on
-# the tailnet without looking up which 100.x address was handed out this time.
+# The name this host takes on the tailnet, so `ssh daniel@xps` works from any
+# device on it without looking up the 100.x address.
 tailscale_hostname: xps

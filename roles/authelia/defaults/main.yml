@@ -20,43 +20,25 @@ authelia_user_email: danieljamesmidwood@gmail.com
 # Every application that authenticates against Authelia, with the callback its
 # OIDC library expects. Adding one here generates its client secret on the next
 # run and adds it to Authelia's configuration; wiring the application's own end
-# is separate, and for Kavita and Portainer is done by hand in their web
-# interfaces.
-# Three settings vary per client, because the relying parties genuinely differ
-# and a single template for all of them does not work:
+# is separate, and for Kavita is done by hand in its web interface.
 #
-#   token_endpoint_auth_method  how the client proves who it is at the token
-#                               endpoint. Authelia rejects the request outright
-#                               if this does not match what the client actually
-#                               sends, and the applications report that
-#                               rejection as an unhelpful generic error.
-#                               Default client_secret_basic, which is the
-#                               OAuth 2.0 default and what both applications
-#                               tested so far turned out to use.
-#   response_modes              how the authorization response comes back.
-#                               Default form_post and query.
-#   require_pkce                whether the authorization code must be bound to
-#                               a PKCE verifier. Default false: these are
-#                               confidential clients that already authenticate
-#                               with a secret over registered HTTPS redirects,
-#                               and requiring PKCE from a client that does not
-#                               send it turns a working login into a failed one.
-#                               Enabled per client where the client is known to
-#                               send it.
+# token_endpoint_auth_method, response_modes, require_pkce and scopes vary per
+# client, and Authelia rejects a request whose form does not match the
+# registration. Defaults are client_secret_basic, form_post and query, no PKCE
+# requirement, and openid/profile/email/groups.
 authelia_clients:
   - id: grafana
     name: Grafana
     redirect_uris:
       - https://grafana.home.danmidwood.com/login/generic_oauth
     # Grafana is configured with GF_AUTH_GENERIC_OAUTH_USE_PKCE, so it always
-    # sends a verifier and requiring one costs nothing.
+    # sends a verifier.
     require_pkce: true
   - id: planka
     name: Planka
     redirect_uris:
       - https://projectboard.home.danmidwood.com/oidc-callback
-    # Planka asks for the response in the URL fragment. Without this Authelia
-    # refuses the authorization request before any login happens.
+    # Planka asks for the authorization response in the URL fragment.
     response_modes:
       - form_post
       - query
@@ -65,51 +47,31 @@ authelia_clients:
     name: Actual Budget
     redirect_uris:
       - https://budget.home.danmidwood.com/openid/callback
-    # Uses the default client_secret_basic. Configured as client_secret_post it
-    # authenticated successfully and was then rejected at the token endpoint
-    # with openid-grant-failed, which named nothing.
   - id: immich
     name: Immich
-    # Immich needs all three: the web client, the mobile application's deep
-    # link, and the desktop application's loopback listener. Omitting the
-    # mobile one is the usual way to discover it is required.
+    # The web client, the mobile application's deep link, and the desktop
+    # application's loopback listener.
     redirect_uris:
       - https://photos.home.danmidwood.com/auth/login
       - https://photos.home.danmidwood.com/user-settings
       - app.immich:///oauth-callback
-    # The one client here that puts its credentials in the request body rather
-    # than in an Authorization header. It worked while client_secret_post was
-    # the default and broke when that default moved to client_secret_basic to
-    # suit Planka and Actual Budget, which is what the per-client override is
-    # for. Immich reports the mismatch as "Failed to finish oauth".
+    # Immich puts its credentials in the request body.
     token_endpoint_auth_method: client_secret_post
   - id: kavita
     name: Kavita
-    # ASP.NET Core's convention, not Kavita's invention. The sign-out callback
-    # is listed too, or logging out lands on an error page.
+    # ASP.NET Core's convention. The sign-out callback is listed so logging out
+    # lands somewhere valid.
     redirect_uris:
       - https://books.home.danmidwood.com/signin-oidc
       - https://books.home.danmidwood.com/signout-callback-oidc
-    # Like Immich, and for the same reason. Kavita also uses pushed
-    # authorization requests, so the mismatch surfaces at the authorization
-    # endpoint rather than the token endpoint: it returns a 500 before the
-    # login page is ever reached, rather than failing on the way back.
+    # Kavita puts its credentials in the request body. It also uses pushed
+    # authorization requests, so it validates these at the authorization
+    # endpoint, before the login page.
     token_endpoint_auth_method: client_secret_post
-    # offline_access is what asks for a refresh token, and Kavita requests it
-    # unconditionally. Authelia refuses any scope a client is not registered
-    # for, so its absence failed the authorization request outright. It is
-    # granted only here, because no other client asks for one.
+    # Kavita requests offline_access, which asks for a refresh token.
     scopes:
       - openid
       - profile
       - email
       - groups
       - offline_access
-
-# Portainer is deliberately absent. Unlike every application above it does not
-# sit behind Caddy at all -- it publishes 8000 and 9000 straight onto the host
-# and is reachable only from the LAN, so the reason for this work (a second
-# factor in front of things exposed to the internet) does not apply to it.
-# Bringing it in would mean first giving it a Caddy vhost and a public name, or
-# registering a plaintext http:// callback, and neither is worth doing to a
-# service that is already unreachable from outside the house.

@@ -1,11 +1,7 @@
 # Managed by Ansible. Do not edit on the host.
 #
-# interface-name is deliberately absent. The profiles this replaced were
-# pinned to wlp58s0, but on a rebuild the wireless interface may enumerate
-# under a different name, and a profile bound to a name that does not exist
-# will not connect. A headless machine that cannot get online is the failure
-# this file exists to prevent, so the profile binds to whatever wifi device
-# is present instead.
+# The profile binds to whatever wifi device is present, so it still connects
+# when the interface enumerates under a different name after a rebuild.
 [connection]
 id={{ item.id }}
 uuid={{ item.uuid }}

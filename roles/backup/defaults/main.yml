@@ -8,8 +8,8 @@ backup_paths:
   # restore and compare.
   - /mnt/storage/backup/canary
   # The generated Authelia secrets, above all storage_encryption_key: nothing
-  # can reconstruct it, and without it the registered passkeys and TOTP devices
-  # in the restored database cannot be decrypted.
+  # can reconstruct it, and without it the registered passkeys in a restored
+  # database cannot be decrypted.
   - /mnt/storage/config/authelia
   - /mnt/storage/config/actual-budget/data
   - /mnt/storage/config/vaultwarden

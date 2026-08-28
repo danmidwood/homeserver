@@ -1,11 +1,9 @@
 #!/bin/bash
 #
 # Generates every secret Authelia needs, once. Guarded by `creates:` in the
-# role, so a second run never happens -- which matters more here than it looks:
-# regenerating storage_encryption_key leaves the registered passkeys and TOTP
-# devices in the database undecryptable, forcing every device to be enrolled
-# again. Nothing here is derived from anything else, so a lost file cannot be
-# reconstructed; the secrets directory is backed up for exactly that reason.
+# role: regenerating storage_encryption_key leaves the registered passkeys in
+# the database undecryptable. Nothing here is derived from anything else, so a
+# lost file cannot be reconstructed, and the secrets directory is backed up.
 #
 # Usage: generate-secrets.sh <secrets-dir> <authelia-image> <client-id>...
 set -euo pipefail
@@ -17,9 +15,8 @@ shift 2
 umask 077
 mkdir -p "${SECRETS_DIR}/clients"
 
-# Authelia's own crypto tooling ships inside the image, so the hashes it is
-# asked to verify are produced by exactly the code that verifies them. `--rm`
-# and no mounts: these invocations only ever write to stdout.
+# Authelia's own crypto tooling ships inside the image, so the hashes are
+# produced by the code that verifies them.
 authelia_rand() {
   docker run --rm "${IMAGE}" authelia crypto rand --length 72 --charset alphanumeric \
     | sed 's/^Random Value: //'
@@ -35,13 +32,11 @@ for name in session_secret storage_encryption_key jwt_secret oidc_hmac_secret; d
 done
 
 # The key that signs ID tokens. Applications fetch the public half from
-# Authelia's JWKS endpoint, so only the private half is stored.
+# Authelia's JWKS endpoint.
 openssl genrsa -out "${SECRETS_DIR}/oidc.key" 4096 2>/dev/null
 
 # Two forms of every client secret: the plaintext an application is configured
-# with, and the digest Authelia stores. Authelia would accept the plaintext in
-# its own configuration, but there is no reason to keep a recoverable copy in
-# two files when the image can hash it.
+# with, and the digest Authelia stores.
 for client in "$@"; do
   secret="$(authelia_rand)"
   printf '%s' "${secret}" > "${SECRETS_DIR}/clients/${client}.secret"

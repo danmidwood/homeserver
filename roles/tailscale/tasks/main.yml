@@ -1,11 +1,7 @@
 - name: Install Tailscale
-  # Deliberately a host package rather than a container. tailscaled needs
-  # /dev/net/tun, NET_ADMIN and the host's routing table, so containerising it
-  # means granting all of that plus host networking -- the isolation a
-  # container would buy is given straight back. The deciding reason is
-  # bootstrapping, though: this is the remote access path, so it must not
-  # depend on Docker. A daemon that fails to start would otherwise take away
-  # the access needed to go and fix it.
+  # A host package: tailscaled needs /dev/net/tun, NET_ADMIN and the host's
+  # routing table, and this is the remote access path, so it must not depend
+  # on Docker being healthy.
   ansible.builtin.package:
     name: tailscale
     state: present
@@ -18,12 +14,9 @@
 
 - name: Read the current Tailscale state
   # `tailscale status` exits non-zero when the node is logged out, which is a
-  # normal state here rather than a failure, so the return code is ignored and
-  # the decision is made from BackendState below.
-  #
-  # check_mode: false because this only reads. Left to the default it is
-  # skipped during a --check run, which produces no output for the next task to
-  # parse and fails the whole dry run.
+  # normal state here, so the return code is ignored and BackendState decides.
+  # check_mode: false because this only reads, and a --check run still needs
+  # its output.
   ansible.builtin.command: tailscale status --json
   register: tailscale_status
   changed_when: false
@@ -31,21 +24,17 @@
   check_mode: false
 
 - name: Decide whether this node is already on the tailnet
-  # The length test guards the parse rather than merely tidying it: Jinja's
-  # `and` short-circuits, so from_json is never reached when the command
-  # produced nothing.
+  # The length test guards the parse: Jinja's `and` short-circuits, so
+  # from_json is never reached when the command produced nothing.
   ansible.builtin.set_fact:
     tailscale_connected: >-
       {{ (tailscale_status.stdout | default('') | trim | length > 0)
          and ((tailscale_status.stdout | from_json).BackendState | default('') == 'Running') }}
 
 - name: Report when Tailscale has no way to authenticate
-  # Deliberately not an assert, matching the wifi profiles in the network role.
-  # The main playbook runs many times a day and an auth key is a single-use
-  # bootstrap credential: once this host has registered it holds its own node
-  # key and never needs the auth key again, so the expected steady state is a
-  # blank key and a connected node. Failing on a blank key would turn the
-  # normal case into a broken playbook.
+  # An auth key is a single-use bootstrap credential: once registered this host
+  # holds its own node key, so a blank key and a connected node is the expected
+  # steady state.
   when: not tailscale_connected and (tailscale_auth_key | default('') | length == 0)
   ansible.builtin.debug:
     msg: >-
@@ -55,15 +44,11 @@
       the playbook again.
 
 - name: Join the tailnet
-  # --accept-dns=false matters on this host. Tailscale would otherwise take
-  # over /etc/resolv.conf, which NetworkManager owns and points at the
-  # FRITZ!Box -- losing that breaks .fritz.box resolution, and the docker role
-  # already carries a workaround for containers starting before DNS is usable.
-  # Nothing here needs to resolve other tailnet names; this host only needs to
-  # be reachable, which does not depend on accepting their DNS.
+  # --accept-dns=false leaves /etc/resolv.conf to NetworkManager, which points
+  # at the FRITZ!Box and is what resolves .fritz.box names.
   #
   # no_log because the auth key grants the right to add machines to the
-  # tailnet, and it would otherwise appear in -v output.
+  # tailnet.
   when: not tailscale_connected and (tailscale_auth_key | default('') | length > 0)
   ansible.builtin.command:
     argv:
