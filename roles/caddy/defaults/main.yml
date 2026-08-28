@@ -1,0 +1,31 @@
+# The services listed on the landing page at www.home.danmidwood.com.
+#
+# This is a deliberately separate list rather than one derived from the
+# Caddyfile or from monitored_endpoints, because "is proxied" and "should be
+# advertised on a page anyone reaching the host can read" are different
+# questions. Two vhosts are proxied and intentionally absent here:
+#
+#   passwords  Vaultwarden. A link to the password vault is an invitation to
+#              attack it, and anyone who needs it has it bookmarked or is
+#              using the browser extension, which does not follow links.
+#   auth       Authelia. Nothing is reached by visiting it directly; the
+#              applications redirect there when they need it.
+caddy_homepage_links:
+  - name: Plex
+    url: https://plex.home.danmidwood.com
+    description: Films and television
+  - name: Photos
+    url: https://photos.home.danmidwood.com
+    description: The photo library
+  - name: Books
+    url: https://books.home.danmidwood.com
+    description: Reading library and comics
+  - name: Budget
+    url: https://budget.home.danmidwood.com
+    description: Household finances
+  - name: Board
+    url: https://projectboard.home.danmidwood.com
+    description: Projects and planning
+  - name: Grafana
+    url: https://grafana.home.danmidwood.com
+    description: Server health and monitoring
