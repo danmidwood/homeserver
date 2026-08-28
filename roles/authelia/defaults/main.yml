@@ -28,7 +28,11 @@ authelia_user_email: danieljamesmidwood@gmail.com
 #   token_endpoint_auth_method  how the client proves who it is at the token
 #                               endpoint. Authelia rejects the request outright
 #                               if this does not match what the client actually
-#                               sends. Default client_secret_post.
+#                               sends, and the applications report that
+#                               rejection as an unhelpful generic error.
+#                               Default client_secret_basic, which is the
+#                               OAuth 2.0 default and what both applications
+#                               tested so far turned out to use.
 #   response_modes              how the authorization response comes back.
 #                               Default form_post and query.
 #   require_pkce                whether the authorization code must be bound to
@@ -61,10 +65,9 @@ authelia_clients:
     name: Actual Budget
     redirect_uris:
       - https://budget.home.danmidwood.com/openid/callback
-    # Actual sends its credentials as HTTP Basic auth. Configured as
-    # client_secret_post it authenticated successfully and was then rejected at
-    # the token endpoint with openid-grant-failed.
-    token_endpoint_auth_method: client_secret_basic
+    # Uses the default client_secret_basic. Configured as client_secret_post it
+    # authenticated successfully and was then rejected at the token endpoint
+    # with openid-grant-failed, which named nothing.
   - id: immich
     name: Immich
     # Immich needs all three: the web client, the mobile application's deep
