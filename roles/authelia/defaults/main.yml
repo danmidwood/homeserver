@@ -77,6 +77,12 @@ authelia_clients:
       - https://photos.home.danmidwood.com/auth/login
       - https://photos.home.danmidwood.com/user-settings
       - app.immich:///oauth-callback
+    # The one client here that puts its credentials in the request body rather
+    # than in an Authorization header. It worked while client_secret_post was
+    # the default and broke when that default moved to client_secret_basic to
+    # suit Planka and Actual Budget, which is what the per-client override is
+    # for. Immich reports the mismatch as "Failed to finish oauth".
+    token_endpoint_auth_method: client_secret_post
   - id: kavita
     name: Kavita
     # ASP.NET Core's convention, not Kavita's invention. The sign-out callback
