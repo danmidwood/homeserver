@@ -22,19 +22,49 @@ authelia_user_email: danieljamesmidwood@gmail.com
 # run and adds it to Authelia's configuration; wiring the application's own end
 # is separate, and for Kavita and Portainer is done by hand in their web
 # interfaces.
+# Three settings vary per client, because the relying parties genuinely differ
+# and a single template for all of them does not work:
+#
+#   token_endpoint_auth_method  how the client proves who it is at the token
+#                               endpoint. Authelia rejects the request outright
+#                               if this does not match what the client actually
+#                               sends. Default client_secret_post.
+#   response_modes              how the authorization response comes back.
+#                               Default form_post and query.
+#   require_pkce                whether the authorization code must be bound to
+#                               a PKCE verifier. Default false: these are
+#                               confidential clients that already authenticate
+#                               with a secret over registered HTTPS redirects,
+#                               and requiring PKCE from a client that does not
+#                               send it turns a working login into a failed one.
+#                               Enabled per client where the client is known to
+#                               send it.
 authelia_clients:
   - id: grafana
     name: Grafana
     redirect_uris:
       - https://grafana.home.danmidwood.com/login/generic_oauth
+    # Grafana is configured with GF_AUTH_GENERIC_OAUTH_USE_PKCE, so it always
+    # sends a verifier and requiring one costs nothing.
+    require_pkce: true
   - id: planka
     name: Planka
     redirect_uris:
       - https://projectboard.home.danmidwood.com/oidc-callback
+    # Planka asks for the response in the URL fragment. Without this Authelia
+    # refuses the authorization request before any login happens.
+    response_modes:
+      - form_post
+      - query
+      - fragment
   - id: actualbudget
     name: Actual Budget
     redirect_uris:
       - https://budget.home.danmidwood.com/openid/callback
+    # Actual sends its credentials as HTTP Basic auth. Configured as
+    # client_secret_post it authenticated successfully and was then rejected at
+    # the token endpoint with openid-grant-failed.
+    token_endpoint_auth_method: client_secret_basic
   - id: immich
     name: Immich
     # Immich needs all three: the web client, the mobile application's deep
