@@ -98,6 +98,10 @@ identity_validation:
 identity_providers:
   oidc:
     hmac_secret: {{ authelia_secrets.oidc_hmac_secret }}
+# No claims_policies. Authelia 4.39 does not put groups in the ID token unless
+# one is defined, and nothing here needs them: the single account is
+# deliberately a Grafana Viewer, and no other application maps roles from
+# groups. Adding the policy would silently promote that account to Admin.
     jwks:
       - key_id: 'main'
         algorithm: 'RS256'
