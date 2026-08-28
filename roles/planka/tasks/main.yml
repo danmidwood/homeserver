@@ -74,7 +74,6 @@
       DEFAULT_ADMIN_EMAIL: danieljamesmidwood@gmail.com
       DEFAULT_ADMIN_NAME: Daniel Midwood
       DEFAULT_ADMIN_USERNAME: daniel
-      # Single sign-on against Authelia.
       OIDC_ISSUER: "{{ authelia_url }}"
       OIDC_CLIENT_ID: "planka"
       OIDC_CLIENT_SECRET: "{{ authelia_client_secret.planka }}"

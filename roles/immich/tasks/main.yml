@@ -68,8 +68,6 @@
       - name: immich_network
 
 - name: Create the Immich config directory
-  # The directory is bind-mounted, not the file, per the rule the caddy role
-  # documents.
   ansible.builtin.file:
     path: /mnt/storage/config/immich/conf
     state: directory
@@ -133,7 +131,7 @@
       DB_USERNAME: "immich"
       DB_PASSWORD: "{{ immich_db_password }}"
       REDIS_HOSTNAME: "immich-redis"
-      # Read at startup; its settings become read-only in the admin interface.
+      # Its settings become read-only in Immich's admin interface.
       IMMICH_CONFIG_FILE: /config/immich.json
 
 - name: Pull the Immich machine learning image

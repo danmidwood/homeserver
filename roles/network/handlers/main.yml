@@ -1,20 +1,15 @@
 - name: Reload NetworkManager
-  # Reload, not restart: restarting NetworkManager over a wifi connection drops
-  # the link this playbook is running across.
+  # Restarting NetworkManager over a wifi connection drops the link this
+  # playbook is running across.
   ansible.builtin.systemd:
     name: NetworkManager
     state: reloaded
 
 - name: Reload NetworkManager connections
-  # Distinct from the reload above, which sends SIGHUP. SIGHUP re-reads
-  # NetworkManager.conf but leaves the connection profiles as NetworkManager
-  # already has them in memory, so a changed profile on disk is ignored: the
-  # first deploy of these files wrote autoconnect-priority 10 and 5, and
-  # nmcli went on reporting 0 for both until this ran. Ansible reported
-  # success the whole time.
-  #
-  # This does not disturb an active connection -- verified on the wifi link
-  # this playbook runs over.
+  # The SIGHUP sent by the reload above re-reads NetworkManager.conf but leaves
+  # the connection profiles as NetworkManager already holds them in memory, so
+  # a changed profile on disk is ignored until this runs. It does not disturb
+  # an active connection.
   ansible.builtin.command:
     cmd: nmcli connection reload
   changed_when: true

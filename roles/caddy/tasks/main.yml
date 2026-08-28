@@ -48,8 +48,6 @@
     mode: '0755'
 
 - name: Create the Caddy static site directory
-  # Its own directory rather than a file mounted into conf/, so the Caddyfile
-  # and the pages it serves are not in the same read-only mount by accident.
   file:
     path: /mnt/storage/config/caddy/site
     state: directory

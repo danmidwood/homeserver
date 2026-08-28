@@ -12,8 +12,6 @@
     mode: "{{ item.mode }}"
   loop:
     - { path: "{{ authelia_config_dir }}", mode: '0755' }
-    # The directory is bind-mounted, not the files, per the rule the caddy role
-    # documents.
     - { path: "{{ authelia_config_dir }}/conf", mode: '0755' }
     # users_database.yml holds the account password, which Authelia rewrites
     # when it is changed from the portal, so this directory is mounted
@@ -65,7 +63,6 @@
   no_log: true
 
 - name: Read the hashed client secrets
-  # The digest form Authelia stores.
   ansible.builtin.slurp:
     src: "{{ authelia_config_dir }}/secrets/clients/{{ item.id }}.hash"
   loop: "{{ authelia_clients }}"
@@ -75,8 +72,6 @@
   no_log: true
 
 - name: Assemble the secrets into one structure
-  # Everything downstream reads authelia_secrets, so the on-disk layout of the
-  # generated directory is described in exactly one place.
   ansible.builtin.set_fact:
     authelia_secrets: >-
       {{ dict(authelia_scalars.results | map(attribute='item') | map('regex_replace', '\.key$', '_key')
@@ -90,8 +85,8 @@
   no_log: true
 
 - name: Generate an initial account password when none is configured
-  # The hash is generated once alongside the plaintext and both are kept, so
-  # the user database is stable across runs.
+  # The hash is generated once and kept, so the user database is stable across
+  # runs.
   when: authelia_password | default('') | length == 0
   ansible.builtin.shell: |
     set -euo pipefail
@@ -157,7 +152,6 @@
   notify: Restart Authelia
 
 - name: Remove the user database from the read-only config directory
-  # Its predecessor, which is no longer mounted anywhere.
   ansible.builtin.file:
     path: "{{ authelia_config_dir }}/conf/users_database.yml"
     state: absent
@@ -185,15 +179,13 @@
     restart_policy: always
     networks:
       - name: caddy_network
-    # Deliberately not published to the host. Caddy is the only thing that
-    # should be able to reach it, and it is on the same docker network.
+    # Not published to the host: Caddy reaches it over the docker network.
     env:
       TZ: "Europe/London"
       X_AUTHELIA_CONFIG: /config/configuration.yml
       AUTHELIA_SESSION_SECRET: "{{ authelia_secrets.session_secret | trim }}"
     volumes:
       - "{{ authelia_config_dir }}/conf:/config:ro"
-      # Writable: Authelia rewrites the user database on a password change.
       - "{{ authelia_config_dir }}/users:/users"
       - "{{ authelia_config_dir }}/data:/data"
     comparisons:

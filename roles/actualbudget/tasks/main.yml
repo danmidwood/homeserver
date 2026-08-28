@@ -37,8 +37,7 @@
     networks:
       - name: caddy_network
     env:
-      # Single sign-on against Authelia. The discovery URL lets each endpoint
-      # be looked up rather than pinned here.
+      # The discovery URL lets each endpoint be looked up rather than pinned.
       ACTUAL_OPENID_DISCOVERY_URL: "{{ authelia_url }}"
       ACTUAL_OPENID_CLIENT_ID: "actualbudget"
       ACTUAL_OPENID_CLIENT_SECRET: "{{ authelia_client_secret.actualbudget }}"

@@ -14,9 +14,8 @@
 
 - name: Read the current Tailscale state
   # `tailscale status` exits non-zero when the node is logged out, which is a
-  # normal state here, so the return code is ignored and BackendState decides.
-  # check_mode: false because this only reads, and a --check run still needs
-  # its output.
+  # normal state here, so BackendState decides instead of the return code.
+  # check_mode: false because a --check run still needs its output.
   ansible.builtin.command: tailscale status --json
   register: tailscale_status
   changed_when: false

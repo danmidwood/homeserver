@@ -106,7 +106,6 @@
     env:
       GF_SECURITY_ADMIN_USER: "admin"
       GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
-      # Single sign-on against Authelia.
       GF_SERVER_ROOT_URL: "https://grafana.home.danmidwood.com"
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
       GF_AUTH_GENERIC_OAUTH_NAME: "Authelia"

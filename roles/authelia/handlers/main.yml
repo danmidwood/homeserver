@@ -1,8 +1,6 @@
 - name: Restart Authelia
-  # Authelia reads its configuration only at startup, so a changed
-  # configuration.yml or users_database.yml has no effect until it is
-  # restarted. Sessions do not survive it, which costs a re-login and nothing
-  # else -- registered passkeys live in the database, not in the session.
+  # Authelia reads its configuration only at startup. Sessions do not survive
+  # this; registered passkeys do, because they live in the database.
   community.docker.docker_container:
     name: authelia
     state: started

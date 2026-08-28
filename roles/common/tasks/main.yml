@@ -7,7 +7,6 @@
       # btmp and wtmp rules, which matters because this host's SSH port is
       # reachable from the internet and btmp grows accordingly.
       - logrotate
-      # Provides paccache, which trims /var/cache/pacman/pkg.
       - pacman-contrib
     state: present
 
@@ -100,7 +99,6 @@
     mode: '0644'
 
 - name: Enable log rotation
-  # The timer is what runs logrotate.
   ansible.builtin.systemd:
     name: logrotate.timer
     enabled: true

@@ -1,20 +1,15 @@
-# Pinned exactly as every other image in this repository: a version tag for
-# imagewatch to compare against, and a digest so the reference cannot move.
 authelia_image: "authelia/authelia:4.39.20@sha256:1b363e9279e742397966333f364e0876ae02bf5c876de73e83af6d48c57ff51b"
 
 authelia_config_dir: /mnt/storage/config/authelia
 
-# The parent of every application's subdomain. The session cookie is scoped
-# here, and that scope is what makes one login work across all of them.
+# The session cookie is scoped here, which is what makes one login work across
+# every application under this domain.
 authelia_cookie_domain: home.danmidwood.com
 authelia_url: "https://auth.home.danmidwood.com"
 
-# The address every application uses to recognise an incoming OIDC login as an
-# existing account. This is not a contact address and changing it is not
-# cosmetic: Planka, Immich and Grafana all match on email, so an address that
-# differs from the one already on those accounts creates a second, empty
-# account instead of signing into the existing one. It matches the Planka admin
-# account declared in the planka role.
+# Planka, Immich and Grafana link an OIDC login to an existing account by
+# email, so this must match the address already on those accounts. It matches
+# the Planka admin account declared in the planka role.
 authelia_user_email: danieljamesmidwood@gmail.com
 
 # Every application that authenticates against Authelia, with the callback its

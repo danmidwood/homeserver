@@ -1,10 +1,9 @@
 - name: Reload Alertmanager
-  # Reload rather than restart: a restart discards in-flight notification
-  # grouping and repeat timers, which can re-send or delay an alert.
+  # A restart would discard in-flight notification grouping and repeat timers,
+  # re-sending or delaying an alert.
   #
-  # Validated first for the same reason as Prometheus — on SIGHUP with a bad
-  # config Alertmanager keeps the old one and only logs, so an unchecked
-  # reload would report success while changing nothing.
+  # On SIGHUP with a bad config Alertmanager keeps the old one and only logs,
+  # so without the check this would report success while changing nothing.
   ansible.builtin.shell: |
     set -e
     docker exec alertmanager amtool check-config /etc/alertmanager/conf/alertmanager.yml

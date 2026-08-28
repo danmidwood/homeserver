@@ -33,8 +33,8 @@ smart_devices:
 monitored_containers:
   - actual_budget
   - alertmanager
-  # Five applications delegate their login to this one container, so if it
-  # stops none of them can be signed into.
+  # Five applications delegate their login here, so if it stops none of them
+  # can be signed into.
   - authelia
   - blackbox
   - cadvisor

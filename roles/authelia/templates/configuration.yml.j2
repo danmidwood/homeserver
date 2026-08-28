@@ -34,7 +34,6 @@ authentication_backend:
         variant: sha512
 
 access_control:
-  # Nothing reaches an application without a second factor.
   default_policy: two_factor
   rules:
     # The login page itself must be reachable unauthenticated.
