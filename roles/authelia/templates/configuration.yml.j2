@@ -11,9 +11,18 @@ log:
   format: text
 
 totp:
-  # Shown in the authenticator application beside the code, so it needs to say
-  # which system the code is for rather than which container generated it.
-  issuer: {{ authelia_cookie_domain }}
+  # Hardware keys only. A TOTP secret is a shared secret: it sits in an
+  # authenticator application, can be screenshotted or copied, and a
+  # convincing enough login page can be given a valid code by the person
+  # being phished. A WebAuthn credential cannot leave the key, and the key
+  # refuses to sign for the wrong domain, so leaving TOTP enabled would mean
+  # the weakest factor set the security of the whole system.
+  #
+  # Safe to disable here because two keys are registered rather than one, and
+  # no TOTP device ever was. If every key is lost, the way back in is to
+  # delete the rows from webauthn_credentials in the Authelia database, which
+  # returns the account to a password and a fresh registration.
+  disable: true
 
 webauthn:
   disable: false
