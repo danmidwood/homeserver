@@ -3,6 +3,21 @@
     name: "grafana/grafana:13.2.0@sha256:3fd54ae1214669f8355f065ec9f6445d5279a3d77095ab048ca045685272429b"
     pull: not_present
 
+- name: Create the Grafana data directory
+  # A bind mount on the internal disk rather than a named docker volume: those
+  # live on the DAS array, which runs without redundancy. Owned by uid 472, the
+  # user the upstream image runs as.
+  #
+  # Deliberately not in backup_paths. What it holds -- users, preferences,
+  # annotations -- is small and easily recreated, while the dashboards, the
+  # datasource and the alert rules are all deployed from this repository.
+  ansible.builtin.file:
+    path: /mnt/storage/config/grafana/data
+    state: directory
+    owner: '472'
+    group: '0'
+    mode: '0755'
+
 - name: Create Grafana datasource provisioning directory
   ansible.builtin.file:
     path: /mnt/storage/config/grafana/provisioning/datasources
@@ -99,7 +114,7 @@
     networks:
       - name: caddy_network
     volumes:
-      - grafana_data:/var/lib/grafana
+      - /mnt/storage/config/grafana/data:/var/lib/grafana
       - /mnt/storage/config/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - /mnt/storage/config/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - /mnt/storage/config/grafana/dashboards:/etc/grafana/dashboards:ro
