@@ -138,3 +138,7 @@
       # needs to read it. The local admin account covers the rest.
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Viewer'"
       GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
+      # Authelia is the only way in through the interface. The local admin
+      # account still authenticates against the HTTP API with basic auth, which
+      # is what remains for the rare administrative task.
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"

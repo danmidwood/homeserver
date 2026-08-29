@@ -42,3 +42,6 @@
       ACTUAL_OPENID_CLIENT_ID: "actualbudget"
       ACTUAL_OPENID_CLIENT_SECRET: "{{ authelia_client_secret.actualbudget }}"
       ACTUAL_OPENID_SERVER_HOSTNAME: "https://budget.home.danmidwood.com"
+      # Removes the server password as a login method, leaving Authelia. The
+      # budget file's own encryption is separate and unaffected.
+      ACTUAL_OPENID_ENFORCE: "true"

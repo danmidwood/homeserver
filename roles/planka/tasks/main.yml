@@ -82,3 +82,5 @@
       # address in Authelia's user database.
       OIDC_EMAIL_ATTRIBUTE: "email"
       OIDC_NAME_ATTRIBUTE: "name"
+      # Removes the local login form, leaving Authelia as the only way in.
+      OIDC_ENFORCED: "true"
