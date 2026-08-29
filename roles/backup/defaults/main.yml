@@ -12,6 +12,7 @@ backup_paths:
   # database cannot be decrypted.
   - /mnt/storage/config/authelia
   - /mnt/storage/config/actual-budget/data
+  - /mnt/storage/config/kavita
   - /mnt/storage/config/vaultwarden
   - /mnt/storage/config/planka/user-avatars
   - /mnt/storage/config/planka/project-background-images

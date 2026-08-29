@@ -4,6 +4,17 @@
       - python-requests
     state: present
 
+- name: Create the Kavita config directory
+  # A bind mount under /mnt/storage rather than a named docker volume. Named
+  # volumes live on the DAS array, which runs without redundancy, and nothing
+  # backs them up; this path is on the internal disk and in backup_paths.
+  ansible.builtin.file:
+    path: /mnt/storage/config/kavita
+    state: directory
+    owner: daniel
+    group: daniel
+    mode: '0755'
+
 - name: Pull the Kavita Docker image
   community.docker.docker_image_pull:
     name: "linuxserver/kavita:v0.9.0.2-ls120@sha256:7e3be67100797e264756e9a1a9c6dd821c5dc0950b7940a645a629a429831118"
@@ -32,7 +43,7 @@
     networks:
       - name: caddy_network
     volumes:
-      - kavita_config:/config
+      - /mnt/storage/config/kavita:/config
       - /mnt/tmdas/Books:/books
     env:
       TZ: "Europe/London"
