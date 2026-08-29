@@ -61,3 +61,8 @@
       - name: caddy_network
     env:
       PLEX_CLAIM: claim-sLM9Es5f6-xLU-sdubWs # Replace this one new system init
+      # Plex's scheduled maintenance window is set in whole hours against the
+      # server's own clock, and its logs are timestamped the same way. Without
+      # this the container runs in UTC, so the window lands an hour later than
+      # it reads through British Summer Time and moves again when that ends.
+      TZ: "Europe/London"
