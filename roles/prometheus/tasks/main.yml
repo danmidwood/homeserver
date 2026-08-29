@@ -165,6 +165,32 @@
     mode: '0644'
   notify: Reload systemd for SMART collector
 
+- name: Install the Arch news collector
+  ansible.builtin.copy:
+    src: arch-news-metrics.sh
+    dest: /usr/local/bin/arch-news-metrics.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the Arch news collector unit
+  ansible.builtin.copy:
+    src: arch-news-metrics.service
+    dest: /etc/systemd/system/arch-news-metrics.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for SMART collector
+
+- name: Install the Arch news collector timer
+  ansible.builtin.copy:
+    src: arch-news-metrics.timer
+    dest: /etc/systemd/system/arch-news-metrics.timer
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for SMART collector
+
 - name: Template the SMART collector
   ansible.builtin.template:
     src: smart-metrics.sh.j2
@@ -193,6 +219,13 @@
 
 - name: Flush handlers so systemd sees the new units before enabling the timer
   ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the Arch news timer
+  ansible.builtin.systemd:
+    name: arch-news-metrics.timer
+    enabled: true
+    state: started
+    daemon_reload: true
 
 - name: Enable and start the pacman staleness timer
   ansible.builtin.systemd:

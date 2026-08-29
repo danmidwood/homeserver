@@ -1,0 +1,8 @@
+[Unit]
+Description=Read the Arch Linux news feed
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/arch-news-metrics.sh
