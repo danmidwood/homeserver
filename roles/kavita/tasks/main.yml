@@ -17,13 +17,13 @@
 
 - name: Pull the Kavita Docker image
   community.docker.docker_image_pull:
-    name: "linuxserver/kavita:v0.9.0.2-ls120@sha256:7e3be67100797e264756e9a1a9c6dd821c5dc0950b7940a645a629a429831118"
+    name: "linuxserver/kavita:v0.9.1.0-ls122@sha256:f6377475ea8e0189257222fdf72ebe3351128c2fa09951300f9cbecdfe6baa29"
     pull: not_present
 
 - name: Run Kavita container
   community.docker.docker_container:
     name: "kavita"
-    image: "linuxserver/kavita:v0.9.0.2-ls120@sha256:7e3be67100797e264756e9a1a9c6dd821c5dc0950b7940a645a629a429831118"
+    image: "linuxserver/kavita:v0.9.1.0-ls122@sha256:f6377475ea8e0189257222fdf72ebe3351128c2fa09951300f9cbecdfe6baa29"
     labels:
       # Checked daily against the registry's tag list for anything newer
       # than the tag pinned above. The digest pin freezes this exact
