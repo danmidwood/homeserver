@@ -111,7 +111,7 @@
     state: started
     restart_policy: always
     volumes:
-      - /mnt/tmdas/immich/upload:/usr/src/app/upload
+      - /mnt/tmdas/immich:/usr/src/app/upload
       - /etc/localtime:/etc/localtime:ro
       - /mnt/storage/config/immich/conf:/config:ro
     comparisons:

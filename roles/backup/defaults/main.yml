@@ -17,7 +17,7 @@ backup_paths:
   - /mnt/storage/config/planka/user-avatars
   - /mnt/storage/config/planka/project-background-images
   - /mnt/storage/config/planka/attachments
-  - /mnt/tmdas/immich/upload
+  - /mnt/tmdas/immich
   - /mnt/tmdas/Books
   - /mnt/tmdas/Documents
   - /mnt/tmdas/Dev
@@ -26,3 +26,11 @@ backup_paths:
   # once a file is moved to an already-backed-up path both snapshots share its
   # chunks, and this covers the window before it is filed.
   - /mnt/storage/telegram-inbox
+
+# Paths under backup_paths that restic skips. Immich regenerates thumbs and
+# encoded-video from the originals, and its own backups/ holds database dumps
+# that duplicate the pg_dump the backup script already takes.
+backup_excludes:
+  - /mnt/tmdas/immich/thumbs
+  - /mnt/tmdas/immich/encoded-video
+  - /mnt/tmdas/immich/backups

@@ -22,6 +22,9 @@ restic backup \
 {% for path in backup_paths %}
   "{{ path }}" \
 {% endfor %}
+{% for path in backup_excludes %}
+  --exclude "{{ path }}" \
+{% endfor %}
   --exclude-caches \
   --tag automated
 
