@@ -39,15 +39,22 @@
       - name: immich_network
     shm_size: 128MB
 
-- name: Pull the Immich Redis container
+- name: Pull the Immich Valkey container
   community.docker.docker_image_pull:
-    name: "docker.io/redis:6.2-alpine@sha256:eaba718fecd1196d88533de7ba49bf903ad33664a92debb24660a922ecd9cac8"
+    name: "docker.io/valkey/valkey:9@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411"
     pull: not_present
 
-- name: Run the Immich Redis container
+- name: Run the Immich Valkey container
+  # Valkey is the Linux Foundation's fork of Redis and what Immich's own
+  # compose file now specifies. It speaks the same protocol, which is why the
+  # healthcheck below still calls redis-cli, and why immich-server reaches it
+  # through REDIS_HOSTNAME unchanged.
+  #
+  # The digest is the one Immich pins rather than whatever :9 resolves to
+  # today, so this runs the build they test against.
   community.docker.docker_container:
     name: "immich-redis"
-    image: "docker.io/redis:6.2-alpine@sha256:eaba718fecd1196d88533de7ba49bf903ad33664a92debb24660a922ecd9cac8"
+    image: "docker.io/valkey/valkey:9@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411"
     labels:
       # Checked daily against the registry's tag list for anything newer
       # than the tag pinned above. The digest pin freezes this exact
@@ -64,6 +71,11 @@
       imagewatch.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
     state: started
     restart_policy: always
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - name: immich_network
 
