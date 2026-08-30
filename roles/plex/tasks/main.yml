@@ -57,6 +57,12 @@
     volumes:
       - /mnt/storage/config/plex:/config
       - /mnt/tmdas/video:/data
+    tmpfs:
+      # Transcoding writes segments continuously and discards them seconds
+      # later. Left to itself Plex puts them in an anonymous docker volume,
+      # which on this host lands on the DAS array. RAM is both faster and the
+      # only storage here that does not wear out.
+      - /transcode:size=4g
     networks:
       - name: caddy_network
     env:

@@ -1,27 +1,16 @@
-- name: Ensure docker volume directory exists so we can mount it
-  ansible.builtin.file:
-    path: /var/lib/docker/volumes
-    state: directory
-    owner: root
-    group: root
-    mode: '0710'
-
-- name: Add a mount to store the docker volumes on the DAS
-  ansible.builtin.lineinfile:
-    path: /etc/fstab
-    line: "/mnt/tmdas/dockervolumes /var/lib/docker/volumes none bind 0 0"
-    state: present
-    backup: yes
-  become: yes
-
-- name: Mount the docker volumes directory
+- name: Keep docker volumes off the DAS array
+  # Docker puts every volume under this path, including the anonymous ones a
+  # container gets from a VOLUME line in its image. Bind-mounting it to the
+  # array meant Plex transcoded onto the one filesystem here with no
+  # redundancy, and did so without anything in this repository asking for it.
   ansible.builtin.mount:
     path: /var/lib/docker/volumes
     src: /mnt/tmdas/dockervolumes
     fstype: none
     opts: bind
-    state: mounted
-  become: yes
+    # absent_from_fstab, not absent: absent also rmdirs the mountpoint, which
+    # is where the volumes now live.
+    state: absent_from_fstab
 
 - name: Ensure Docker is installed
   package:
