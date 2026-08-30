@@ -114,3 +114,52 @@
   loop:
     - /mnt/storage/config/alertmanager/alertmanager.yml
     - /mnt/storage/config/alertmanager/telegram_token
+
+- name: Read the silences Alertmanager already holds
+  ansible.builtin.uri:
+    url: http://localhost:9093/api/v2/silences
+    return_content: true
+  register: alertmanager_existing_silences
+  changed_when: false
+  check_mode: false
+
+- name: Silence the update alert for containers pinned on purpose
+  # Matched on container AND current_tag together, so the silence covers only
+  # the version being held. Alertmanager has no upsert, so an equivalent
+  # active silence is looked for first; without that check every run would
+  # create another copy.
+  ansible.builtin.uri:
+    url: http://localhost:9093/api/v2/silences
+    method: POST
+    body_format: json
+    status_code: 200
+    body:
+      matchers:
+        - name: alertname
+          value: ImageUpdateAvailable
+          isRegex: false
+          isEqual: true
+        - name: container
+          value: "{{ item.container }}"
+          isRegex: false
+          isEqual: true
+        - name: current_tag
+          value: "{{ item.current_tag }}"
+          isRegex: false
+          isEqual: true
+      # Both in UTC, which the trailing Z claims. strftime renders local time
+      # unless told otherwise, and an hour of British Summer Time was enough to
+      # leave the silence pending, suppressing nothing.
+      startsAt: "{{ ansible_date_time.iso8601 }}"
+      endsAt: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime((ansible_date_time.epoch | int) + (alertmanager_silence_duration_days | int * 86400), utc=true) }}"
+      createdBy: ansible
+      comment: "{{ item.comment | trim }}"
+  loop: "{{ alertmanager_pinned_silences }}"
+  loop_control:
+    label: "{{ item.container }} @ {{ item.current_tag }}"
+  when: >-
+    (alertmanager_existing_silences.content | from_json
+      | rejectattr('status.state', 'equalto', 'expired')
+      | selectattr('matchers', 'contains', {'name': 'container', 'value': item.container, 'isRegex': false, 'isEqual': true})
+      | selectattr('matchers', 'contains', {'name': 'current_tag', 'value': item.current_tag, 'isRegex': false, 'isEqual': true})
+      | list | length) == 0

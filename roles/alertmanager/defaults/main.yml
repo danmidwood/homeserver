@@ -1,0 +1,23 @@
+# Containers deliberately held at a version older than the newest published
+# tag, and the reason. Each entry silences ImageUpdateAvailable for that
+# container while it runs that exact tag.
+#
+# The current_tag matcher is what makes this release itself: image-update-check
+# labels every alert with the tag the container is actually running, so the
+# moment the pin moves the silence stops matching and the alert returns.
+#
+# Silences are runtime state in Alertmanager, kept in a data directory that is
+# not backed up, so declaring them here is what makes them survive a rebuild.
+alertmanager_pinned_silences:
+  - container: immich-postgres
+    current_tag: "14-vectorchord0.4.3-pgvectors0.2.0"
+    comment: >-
+      Immich's own compose file for v3.1.0 pins this exact image. Postgres 17
+      is newer but is not what Immich tests against, and a major version cannot
+      be adopted by swapping the image in any case: the on-disk format changes.
+      Revisit when Immich's compose moves.
+
+# How long a silence is created for. The current_tag matcher is what actually
+# ends it; this is the backstop for a pin that is never revisited, and forces
+# the reason above to be reread roughly once a year.
+alertmanager_silence_duration_days: 365

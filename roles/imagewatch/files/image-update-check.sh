@@ -322,6 +322,7 @@ while read -r name image; do
     --arg newest "$e_newest" \
     --arg sample "$e_sample" \
     --arg count "$count" \
+    --arg tag "$tag" \
     --arg note "$shape_note" \
     --arg starts "$STARTS_AT" \
     --arg ends "$ENDS_AT" \
@@ -331,7 +332,8 @@ while read -r name image; do
           severity: "info",
           instance: "xps",
           job: "imagewatch",
-          container: $name
+          container: $name,
+          current_tag: $tag
         },
         annotations: {
           summary: ($name + ": " + $newest + " is available"),
