@@ -74,6 +74,11 @@
     user: daniel
     key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH3z/AM35YYthOkWQIXgJzqByoTI3u2W9H0J23ytEQBN daniel@work-mbp"
 
+- name: Add the rebuilt laptop's public key to authorized_keys
+  ansible.posix.authorized_key:
+    user: daniel
+    key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJpN9AsbvMQxup+O2aniMcCCAc7PzSY2KW3+I9IV6OMC dan@danmidwood.com"
+
 - name: Configure git user name
   community.general.git_config:
     name: user.name
