@@ -1,0 +1,26 @@
+# Managed by Ansible. Do not edit on the host.
+service:
+  publicurl: "{{ vikunja_url }}"
+  jwtsecret: "{{ vikunja_jwt_secret }}"
+  timezone: Europe/London
+  enableregistration: false
+
+database:
+  type: postgres
+  host: vikunja-postgres
+  database: vikunja
+  user: vikunja
+  password: "{{ vikunja_db_password }}"
+
+auth:
+  local:
+    enabled: {{ vikunja_local_login | lower }}
+  openid:
+    enabled: true
+    providers:
+      {{ vikunja_oidc_provider_id }}:
+        name: Authelia
+        authurl: "{{ authelia_url }}"
+        clientid: vikunja
+        clientsecret: "{{ authelia_client_secret.vikunja }}"
+        scope: openid profile email

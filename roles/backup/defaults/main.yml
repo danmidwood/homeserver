@@ -13,6 +13,9 @@ backup_paths:
   - /mnt/storage/config/authelia
   - /mnt/storage/config/actual-budget/data
   - /mnt/storage/config/kavita
+  # Attachments, and the signing secret that keeps sessions valid.
+  - /mnt/storage/config/vikunja/files
+  - /mnt/storage/config/vikunja/secrets
   - /mnt/storage/config/vaultwarden
   - /mnt/storage/config/planka/user-avatars
   - /mnt/storage/config/planka/project-background-images

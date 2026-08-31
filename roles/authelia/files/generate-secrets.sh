@@ -1,9 +1,15 @@
 #!/bin/bash
 #
-# Generates every secret Authelia needs, once. Guarded by `creates:` in the
-# role: regenerating storage_encryption_key leaves the registered passkeys in
-# the database undecryptable. Nothing here is derived from anything else, so a
-# lost file cannot be reconstructed, and the secrets directory is backed up.
+# Generates every secret Authelia needs, creating only what is missing.
+#
+# Nothing here is ever overwritten. storage_encryption_key in particular must
+# survive: replacing it leaves the registered passkeys in the database
+# undecryptable. Nothing is derived from anything else either, so a lost file
+# cannot be reconstructed, which is why the secrets directory is backed up.
+#
+# Creating only what is missing is also what lets a client be added to
+# authelia_clients later: its secret is minted on the next run while every
+# existing one is left alone.
 #
 # Usage: generate-secrets.sh <secrets-dir> <authelia-image> <client-id>...
 set -euo pipefail
@@ -28,19 +34,24 @@ authelia_hash() {
 }
 
 for name in session_secret storage_encryption_key jwt_secret oidc_hmac_secret; do
+  [ -s "${SECRETS_DIR}/${name}" ] && continue
   authelia_rand > "${SECRETS_DIR}/${name}"
 done
 
 # The key that signs ID tokens. Applications fetch the public half from
 # Authelia's JWKS endpoint.
-openssl genrsa -out "${SECRETS_DIR}/oidc.key" 4096 2>/dev/null
+[ -s "${SECRETS_DIR}/oidc.key" ] || openssl genrsa -out "${SECRETS_DIR}/oidc.key" 4096 2>/dev/null
 
 # Two forms of every client secret: the plaintext an application is configured
 # with, and the digest Authelia stores.
 for client in "$@"; do
+  secret_file="${SECRETS_DIR}/clients/${client}.secret"
+  hash_file="${SECRETS_DIR}/clients/${client}.hash"
+  [ -s "$secret_file" ] && [ -s "$hash_file" ] && continue
+
   secret="$(authelia_rand)"
-  printf '%s' "${secret}" > "${SECRETS_DIR}/clients/${client}.secret"
-  authelia_hash "${secret}" > "${SECRETS_DIR}/clients/${client}.hash"
+  printf '%s' "${secret}" > "$secret_file"
+  authelia_hash "${secret}" > "$hash_file"
 done
 
 chmod 700 "${SECRETS_DIR}" "${SECRETS_DIR}/clients"

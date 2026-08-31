@@ -17,6 +17,12 @@ caddy_homepage_links:
   - name: Board
     url: https://projectboard.home.danmidwood.com
     description: Projects and planning
+  - name: Tasks
+    url: https://tasks.home.danmidwood.com
+    description: To-do lists and planning
+  - name: Tasks
+    url: https://tasks.home.danmidwood.com
+    description: To-do lists and planning
   - name: Grafana
     url: https://grafana.home.danmidwood.com
     description: Server health and monitoring

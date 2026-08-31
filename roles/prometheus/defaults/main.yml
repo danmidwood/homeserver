@@ -51,6 +51,8 @@ monitored_containers:
   - plex
   - prometheus
   - vaultwarden
+  - vikunja
+  - vikunja-postgres
 
 # The URLs blackbox probes, matching the Caddyfile's hostnames.
 #
@@ -69,3 +71,4 @@ monitored_endpoints:
   - https://photos.home.danmidwood.com
   - https://plex.home.danmidwood.com/identity
   - https://projectboard.home.danmidwood.com
+  - https://tasks.home.danmidwood.com

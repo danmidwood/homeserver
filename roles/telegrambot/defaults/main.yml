@@ -22,5 +22,6 @@ telegrambot_restartable:
   - planka
   - plex
   - vaultwarden
+  - vikunja
 
 telegrambot_inbox_dir: /mnt/storage/telegram-inbox

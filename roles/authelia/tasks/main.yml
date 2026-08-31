@@ -30,14 +30,16 @@
     group: root
     mode: '0755'
 
-- name: Generate the Authelia secrets
-  # Runs exactly once in the lifetime of the deployment: regenerating
-  # storage_encryption_key leaves every registered passkey in the database
-  # undecryptable. The secrets directory is in backup_paths so a rebuild
-  # restores them.
+- name: Generate any missing Authelia secrets
+  # Runs every time and creates only what is absent, so adding a client to
+  # authelia_clients mints its secret while every existing one is untouched.
+  # A guard that skipped the whole script once the first secret existed left a
+  # newly added client with no secret at all.
   ansible.builtin.command:
     argv: "{{ ['/usr/local/bin/authelia-generate-secrets.sh', authelia_config_dir + '/secrets', authelia_image] + (authelia_clients | map(attribute='id') | list) }}"
-    creates: "{{ authelia_config_dir }}/secrets/storage_encryption_key"
+  register: authelia_secret_gen
+  changed_when: false
+  check_mode: false
 
 - name: Read the Authelia scalar secrets
   ansible.builtin.slurp:

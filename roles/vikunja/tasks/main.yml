@@ -1,0 +1,138 @@
+- name: Create the Vikunja directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ vikunja_config_dir }}", owner: root, group: root, mode: '0755' }
+    - { path: "{{ vikunja_config_dir }}/conf", owner: root, group: root, mode: '0755' }
+    # uid 70 is postgres in the alpine image. Its entrypoint drops privileges
+    # before creating the version subdirectory, so a root-owned mount leaves it
+    # unable to make its own data directory.
+    - { path: "{{ vikunja_config_dir }}/db-data", owner: '70', group: '70', mode: '0700' }
+    - { path: "{{ vikunja_config_dir }}/secrets", owner: root, group: root, mode: '0700' }
+    # Attachments. Vikunja runs as uid 1000 with no group, so it owns this.
+    - { path: "{{ vikunja_config_dir }}/files", owner: '1000', group: '1000', mode: '0755' }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Generate the Vikunja signing secret
+  # Signs the session tokens. Changing it logs everyone out, so it is written
+  # once and kept, and the directory holding it is in backup_paths.
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    openssl rand -hex 32 | tr -d '\n' > {{ vikunja_config_dir }}/secrets/jwt_secret
+  args:
+    executable: /bin/bash
+    creates: "{{ vikunja_config_dir }}/secrets/jwt_secret"
+
+- name: Read the Vikunja signing secret
+  ansible.builtin.slurp:
+    src: "{{ vikunja_config_dir }}/secrets/jwt_secret"
+  register: vikunja_jwt_file
+  no_log: true
+
+- name: Keep the signing secret to hand
+  ansible.builtin.set_fact:
+    vikunja_jwt_secret: "{{ vikunja_jwt_file.content | b64decode | trim }}"
+  no_log: true
+
+- name: Create the Vikunja Docker network
+  community.docker.docker_network:
+    name: vikunja_network
+
+- name: Pull the Vikunja Postgres image
+  community.docker.docker_image_pull:
+    name: "{{ vikunja_postgres_image }}"
+    pull: not_present
+
+- name: Run the Vikunja Postgres container
+  community.docker.docker_container:
+    name: "vikunja-postgres"
+    image: "{{ vikunja_postgres_image }}"
+    labels:
+      # Checked daily against the registry's tag list for anything newer
+      # than the tag pinned above. The digest pin freezes this exact
+      # reference, so the useful signal is a new tag, not a new digest.
+      imagewatch.enable: "true"
+      # Excluded rather than included, deliberately. An exclude pattern that
+      # is wrong produces visible noise; an include pattern that is wrong
+      # produces silence, and a release that never arrives never announces
+      # itself. These three shapes are provably not releases: per-commit
+      # builds (actualbudget publishes 2883 tags, of which 99.9% are these),
+      # bare commit hashes, and rolling branch builds. Real version tags of
+      # every convention in use here are left untouched, including
+      # v0.9.0.2-ls120, 16-alpine and 1.43.3.10896-cb3ebc72d.
+      imagewatch.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
+    state: started
+    restart_policy: always
+    volumes:
+      # Postgres 18 moved PGDATA to /var/lib/postgresql/<major>/docker and asks
+      # for a single mount at /var/lib/postgresql, so that a later pg_upgrade
+      # --link is not straddling a mount point. Mounting the pre-18 path leaves
+      # it unable to find a data directory it recognises.
+      - "{{ vikunja_config_dir }}/db-data:/var/lib/postgresql"
+    env:
+      POSTGRES_DB: "vikunja"
+      POSTGRES_USER: "vikunja"
+      POSTGRES_PASSWORD: "{{ vikunja_db_password }}"
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vikunja -d vikunja"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    networks:
+      - name: vikunja_network
+  no_log: true
+
+- name: Template the Vikunja configuration
+  # no_log because the rendered file carries the database password, the
+  # signing secret and the OIDC client secret.
+  ansible.builtin.template:
+    src: config.yml.j2
+    dest: "{{ vikunja_config_dir }}/conf/config.yml"
+    owner: root
+    group: root
+    mode: '0644'
+  no_log: true
+  notify: Restart Vikunja
+
+- name: Pull the Vikunja image
+  community.docker.docker_image_pull:
+    name: "{{ vikunja_image }}"
+    pull: not_present
+
+- name: Run the Vikunja container
+  community.docker.docker_container:
+    name: "vikunja"
+    image: "{{ vikunja_image }}"
+    labels:
+      # Checked daily against the registry's tag list for anything newer
+      # than the tag pinned above. The digest pin freezes this exact
+      # reference, so the useful signal is a new tag, not a new digest.
+      imagewatch.enable: "true"
+      # Excluded rather than included, deliberately. An exclude pattern that
+      # is wrong produces visible noise; an include pattern that is wrong
+      # produces silence, and a release that never arrives never announces
+      # itself. These three shapes are provably not releases: per-commit
+      # builds (actualbudget publishes 2883 tags, of which 99.9% are these),
+      # bare commit hashes, and rolling branch builds. Real version tags of
+      # every convention in use here are left untouched, including
+      # v0.9.0.2-ls120, 16-alpine and 1.43.3.10896-cb3ebc72d.
+      imagewatch.exclude_tags: "^sha-;^[0-9a-f]{7,40}$;^(main|master|edge|nightly|dev|develop|canary)([.-]|$)"
+    state: started
+    restart_policy: always
+    volumes:
+      - "{{ vikunja_config_dir }}/conf:/etc/vikunja:ro"
+      - "{{ vikunja_config_dir }}/files:/app/vikunja/files"
+    comparisons:
+      # Without this a volume removed from the list above stays mounted,
+      # because docker_container defaults to allow_more_present.
+      volumes: strict
+    networks:
+      - name: caddy_network
+      - name: vikunja_network

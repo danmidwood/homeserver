@@ -1,0 +1,6 @@
+- name: Restart Vikunja
+  # Vikunja reads its configuration at startup only.
+  community.docker.docker_container:
+    name: vikunja
+    state: started
+    restart: true

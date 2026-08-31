@@ -100,6 +100,10 @@
         reverse_proxy planka:1337
       }
 
+      tasks.home.danmidwood.com {
+        reverse_proxy vikunja:3456
+      }
+
       passwords.home.danmidwood.com {
         reverse_proxy vaultwarden:80
       }

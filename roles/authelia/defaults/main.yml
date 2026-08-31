@@ -52,6 +52,12 @@ authelia_clients:
       - app.immich:///oauth-callback
     # Immich puts its credentials in the request body.
     token_endpoint_auth_method: client_secret_post
+  - id: vikunja
+    name: Vikunja
+    # The path segment is the key of the provider block in Vikunja's own
+    # config, not a fixed string.
+    redirect_uris:
+      - https://tasks.home.danmidwood.com/auth/openid/authelia
   - id: kavita
     name: Kavita
     # ASP.NET Core's convention. The sign-out callback is listed so logging out

@@ -1,0 +1,13 @@
+vikunja_image: "vikunja/vikunja:2.5.0@sha256:22df4c1bc8843c28d383bc5f52b59e7b601bf5f6560b36b29c0a500833c77fa3"
+vikunja_postgres_image: "postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2"
+
+vikunja_config_dir: /mnt/storage/config/vikunja
+vikunja_url: "https://tasks.home.danmidwood.com"
+
+# The key of the provider block in Vikunja's config becomes the callback path,
+# /auth/openid/<id>, which is what Authelia has to be told to redirect to.
+vikunja_oidc_provider_id: authelia
+
+# Turned off once a sign-in through Authelia has been seen to work. Until then
+# it is the way in if the OIDC client is wrong.
+vikunja_local_login: true
