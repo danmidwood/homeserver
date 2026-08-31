@@ -8,6 +8,7 @@ vikunja_url: "https://tasks.home.danmidwood.com"
 # /auth/openid/<id>, which is what Authelia has to be told to redirect to.
 vikunja_oidc_provider_id: authelia
 
-# Turned off once a sign-in through Authelia has been seen to work. Until then
-# it is the way in if the OIDC client is wrong.
-vikunja_local_login: true
+# Authelia only. Vikunja creates a user on first OIDC sign-in, so no local
+# account is needed; if the client ever breaks, setting this true and running
+# the playbook puts the password form back.
+vikunja_local_login: false
