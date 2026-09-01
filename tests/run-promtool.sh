@@ -73,6 +73,9 @@ if ! "$PYTHON" -c "import jinja2, yaml" 2>/dev/null; then
 fi
 
 RENDERED_CONFIG="$(mktemp "$REPO_ROOT/tests/.prometheus.rendered.XXXXXX")"
+# mktemp creates this 0600. promtool runs inside the prometheus container as a
+# different user, which cannot then read it.
+chmod 644 "$RENDERED_CONFIG"
 trap 'rm -f "$RENDERED_CONFIG"' EXIT
 
 "$PYTHON" - "$RENDERED_CONFIG" <<'PYEOF'

@@ -21,14 +21,14 @@ tests:
         alertname: PacmanMetricsMissing
         exp_alerts: []
 
-  # Not upgraded for over 60 days.
+  # Not upgraded for over 30 days.
   - interval: 1h
     input_series:
       - series: 'pacman_last_full_upgrade_timestamp_seconds{instance="xps",job="node"}'
         values: '86400+0x2000'
     alert_rule_test:
-      # Not yet overdue at 60 days: the rule is a strict >.
-      - eval_time: 1464h
+      # Not yet overdue at 30 days: the rule is a strict >.
+      - eval_time: 720h
         alertname: SystemUpgradeOverdue
         exp_alerts: []
       - eval_time: 1600h
@@ -40,7 +40,7 @@ tests:
               job: node
             exp_annotations:
               summary: "No full system upgrade in 65d 16h 0m 0s"
-              description: "The host has not had a `pacman -Syu` in over 60 days. Arch does not support partial upgrades, so the gap is the risk: installing any new package meanwhile builds it against libraries this system does not have. Run `ansible-playbook -i inventory/hosts.ini playbooks/upgrade.yml --check` to preview, and read https://archlinux.org/news/ first."
+              description: "The host has not had a `pacman -Syu` in over 30 days. Arch does not support partial upgrades, so the gap is the risk: installing any new package meanwhile builds it against libraries this system does not have. Run `ansible-playbook -i inventory/hosts.ini playbooks/upgrade.yml --check` to preview, and read https://archlinux.org/news/ first."
 
   # A zero timestamp is "never recorded", not "overdue since 1970".
   - interval: 1h

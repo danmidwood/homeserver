@@ -54,7 +54,7 @@
   no_log: true
 
 - name: Read the plaintext client secrets
-  # Consumed by the grafana, planka, actualbudget and immich roles, which run
+  # Consumed by the grafana, actualbudget, immich and vikunja roles, which run
   # after this one.
   ansible.builtin.slurp:
     src: "{{ authelia_config_dir }}/secrets/clients/{{ item.id }}.secret"

@@ -7,9 +7,8 @@ authelia_config_dir: /mnt/storage/config/authelia
 authelia_cookie_domain: home.danmidwood.com
 authelia_url: "https://auth.home.danmidwood.com"
 
-# Planka, Immich and Grafana link an OIDC login to an existing account by
-# email, so this must match the address already on those accounts. It matches
-# the Planka admin account declared in the planka role.
+# Immich, Grafana and Vikunja link an OIDC login to an existing account by
+# email, so this must match the address already on those accounts.
 authelia_user_email: danieljamesmidwood@gmail.com
 
 # Every application that authenticates against Authelia, with the callback its
@@ -29,15 +28,6 @@ authelia_clients:
     # Grafana is configured with GF_AUTH_GENERIC_OAUTH_USE_PKCE, so it always
     # sends a verifier.
     require_pkce: true
-  - id: planka
-    name: Planka
-    redirect_uris:
-      - https://projectboard.home.danmidwood.com/oidc-callback
-    # Planka asks for the authorization response in the URL fragment.
-    response_modes:
-      - form_post
-      - query
-      - fragment
   - id: actualbudget
     name: Actual Budget
     redirect_uris:

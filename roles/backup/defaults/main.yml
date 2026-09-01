@@ -17,9 +17,6 @@ backup_paths:
   - /mnt/storage/config/vikunja/files
   - /mnt/storage/config/vikunja/secrets
   - /mnt/storage/config/vaultwarden
-  - /mnt/storage/config/planka/user-avatars
-  - /mnt/storage/config/planka/project-background-images
-  - /mnt/storage/config/planka/attachments
   - /mnt/tmdas/immich
   - /mnt/tmdas/Books
   - /mnt/tmdas/Documents

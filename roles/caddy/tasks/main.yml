@@ -96,10 +96,6 @@
         reverse_proxy kavita:5000
       }
 
-      projectboard.home.danmidwood.com {
-        reverse_proxy planka:1337
-      }
-
       tasks.home.danmidwood.com {
         reverse_proxy vikunja:3456
       }

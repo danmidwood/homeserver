@@ -150,7 +150,7 @@ tests:
   # A container restarting repeatedly. start_time changes on each restart.
   - interval: 1m
     input_series:
-      - series: 'container_start_time_seconds{name="planka",instance="xps",job="cadvisor"}'
+      - series: 'container_start_time_seconds{name="vikunja",instance="xps",job="cadvisor"}'
         values: '100 200 300 400 500 600 700 800 900 1000 1100 1200'
     alert_rule_test:
       - eval_time: 11m
@@ -158,17 +158,17 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: warning
-              name: planka
+              name: vikunja
               instance: xps
               job: cadvisor
             exp_annotations:
-              summary: "Container planka has restarted 11 times in an hour"
-              description: "planka keeps restarting, which usually means it is crashing on startup. Docker's restart policy will keep retrying indefinitely, so this can continue unnoticed. Check `docker logs planka`."
+              summary: "Container vikunja has restarted 11 times in an hour"
+              description: "vikunja keeps restarting, which usually means it is crashing on startup. Docker's restart policy will keep retrying indefinitely, so this can continue unnoticed. Check `docker logs vikunja`."
 
   # A container that started once and stayed up must never fire it.
   - interval: 1m
     input_series:
-      - series: 'container_start_time_seconds{name="planka",instance="xps",job="cadvisor"}'
+      - series: 'container_start_time_seconds{name="vikunja",instance="xps",job="cadvisor"}'
         values: '100+0x70'
     alert_rule_test:
       - eval_time: 65m

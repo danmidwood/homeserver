@@ -46,8 +46,6 @@ monitored_containers:
   - immich-redis
   - immich-server
   - kavita
-  - planka
-  - planka-postgres
   - plex
   - prometheus
   - vaultwarden
@@ -70,5 +68,4 @@ monitored_endpoints:
   - https://passwords.home.danmidwood.com
   - https://photos.home.danmidwood.com
   - https://plex.home.danmidwood.com/identity
-  - https://projectboard.home.danmidwood.com
   - https://tasks.home.danmidwood.com

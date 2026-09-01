@@ -13,7 +13,6 @@ START=$(date +%s)
 # the same reason the Postgres databases below go through pg_dump.
 sqlite3 /mnt/storage/config/authelia/data/db.sqlite3 ".backup '${DUMP_DIR}/authelia.sqlite3'"
 
-docker exec planka-postgres pg_dump -U postgres planka > "${DUMP_DIR}/planka.sql"
 docker exec -e PGPASSWORD="{{ vikunja_db_password }}" vikunja-postgres pg_dump -U vikunja vikunja > "${DUMP_DIR}/vikunja.sql"
 docker exec -e PGPASSWORD="{{ immich_db_password }}" immich-postgres pg_dump -U immich immich > "${DUMP_DIR}/immich.sql"
 
