@@ -18,6 +18,7 @@ assumed.
 | Services | Docker containers, supervised by Docker itself, not systemd units |
 | Offsite backup | restic to Backblaze B2, nightly at 00:00 |
 | Alerts | Prometheus → Alertmanager → Telegram |
+| Time Machine | Samba on the host, `/mnt/tmdas/timemachine`, snapshotted daily |
 | Dead-man's switch | Healthchecks.io, pinged every 5 minutes by an always-firing rule |
 
 **The laptop's battery is a UPS.** `OnBatteryPower` alerts when mains is lost.
@@ -79,6 +80,24 @@ Both firing means the container died. `EndpointDown` **alone** means the
 container is running fine and something in front of it is broken — Caddy lost
 its upstream, or the application inside is wedged. That distinction is the
 whole reason both rules exist.
+
+### `TimeMachineSnapshotStale` / `TimeMachineSnapshotNeverRan`
+No read-only snapshot of the Time Machine share in over 36 hours. Time Machine
+keeps its own history, so this is not about losing a file — the snapshots are
+what survives something on a Mac encrypting the share over SMB, or Time Machine
+corrupting its own sparsebundle. Until it runs again, neither is guarded.
+
+```bash
+systemctl list-timers timemachine-snapshot.timer
+sudo systemctl start timemachine-snapshot.service   # runs it now
+journalctl -u timemachine-snapshot.service -n 30
+```
+
+### `TimeMachineFragmentationHigh`
+The sparsebundle bands are fragmented enough to be worth defragmenting. See
+[Defragmenting the Time Machine share](#defragmenting-the-time-machine-share)
+below — **do not simply run a defrag**, it will multiply the space the snapshots
+use.
 
 ### `OnBatteryPower`
 Mains power is gone. Note that if the whole house lost power the router is down
@@ -313,6 +332,58 @@ choosing something to play.
 ./tests/check-image-update.sh  # the image update checker
 ./tests/check-dashboards.sh    # Grafana dashboard JSON
 ```
+
+---
+
+## Defragmenting the Time Machine share
+
+Time Machine writes randomly into 8 MB sparsebundle bands. On btrfs every one
+of those writes is copy-on-write, so the bands fragment steadily. This is
+expected and is why `TimeMachineFragmentationHigh` exists.
+
+**Read this before running a defrag.** `btrfs filesystem defragment` rewrites
+extents into contiguous ones, and any extent shared with a snapshot is unshared
+in the process. Defragmenting a subvolume that has fourteen daily snapshots can
+turn a few hundred megabytes of deltas into fourteen near-complete copies. This
+is why the defrag is not scheduled: on a filesystem with about 2 TB free and a
+5 TB video library beside it, an automatic one could fill the disk.
+
+The safe order is to delete the snapshots first, defragment, then let the timer
+rebuild them. That costs the snapshot history, which is the trade being made
+deliberately — pick a moment when the last few days of it are not precious.
+
+```bash
+# 1. Confirm it is actually worth doing. The metric is a mean over a sample
+#    of bands; a handful of fragmented files is not a reason.
+grep timemachine_band /var/lib/node_exporter/textfile_collector/timemachine.prom
+
+# 2. Stop Time Machine writing to it, or the defrag chases a moving target.
+sudo systemctl stop smb
+
+# 3. Delete every snapshot. They are subvolumes, so rm will not do it.
+for s in /mnt/tmdas/timemachine-snapshots/tm-*; do
+  sudo btrfs subvolume delete "$s"
+done
+
+# 4. Defragment. -t 32M asks for larger extents than the 8 MB bands, which is
+#    what actually reduces the count. This takes hours on the array.
+sudo btrfs filesystem defragment -r -t 32M /mnt/tmdas/timemachine
+
+# 5. Bring Samba back and take a fresh snapshot to start the history again.
+sudo systemctl start smb
+sudo systemctl start timemachine-snapshot.service
+```
+
+Check the space situation before step 4 — a defrag needs room to write the new
+extents before releasing the old ones.
+
+```bash
+df -h /mnt/tmdas
+sudo btrfs filesystem usage /mnt/tmdas
+```
+
+If free space is tight, do it in parts by pointing the defrag at one Mac's
+directory at a time rather than the whole subvolume.
 
 ---
 

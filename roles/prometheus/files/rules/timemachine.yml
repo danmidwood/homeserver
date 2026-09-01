@@ -33,4 +33,4 @@ groups:
           severity: info
         annotations:
           summary: "Time Machine bands average {{ $value }} extents"
-          description: "The sparsebundle bands are fragmented enough to be worth defragmenting. Do it by hand: delete the snapshots under the snapshot directory first, then `btrfs filesystem defragment -r -t 32M` the subvolume, and let the timer rebuild them. Defragmenting while the snapshots exist unshares their extents and multiplies the space they use."
+          description: "The sparsebundle bands are fragmented enough to be worth defragmenting. Follow 'Defragmenting the Time Machine share' in docs/runbook.md: the snapshots must be deleted first, because a defrag unshares their extents and multiplies the space they use."
