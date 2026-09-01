@@ -1,0 +1,36 @@
+groups:
+  - name: timemachine
+    rules:
+      # Snapshots are what survives something on the Mac encrypting the share
+      # over SMB, or Time Machine corrupting its own sparsebundle. A timer that
+      # has quietly stopped looks exactly like one that is working.
+      - alert: TimeMachineSnapshotStale
+        expr: time() - timemachine_snapshot_last_success_timestamp_seconds > 36 * 3600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "No Time Machine snapshot for {{ $value | humanizeDuration }}"
+          description: "timemachine-snapshot.timer has not completed a successful run in over 36 hours, so the Time Machine share has no recent read-only copy. Check `systemctl status timemachine-snapshot.service`."
+
+      - alert: TimeMachineSnapshotNeverRan
+        expr: absent(timemachine_snapshot_last_success_timestamp_seconds)
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "The Time Machine snapshot metric is absent"
+          description: "No timemachine.prom has been written, so the snapshot job has never completed. Everything the snapshots protect against is currently unguarded."
+
+      # Copy-on-write plus Time Machine's random 8 MB band rewrites fragment the
+      # sparsebundle over time. Defragmenting is deliberately not scheduled: it
+      # breaks the reflinks that make the snapshots cheap. This says when it is
+      # worth doing by hand, after dropping the snapshots.
+      - alert: TimeMachineFragmentationHigh
+        expr: timemachine_band_extents_avg > 50
+        for: 24h
+        labels:
+          severity: info
+        annotations:
+          summary: "Time Machine bands average {{ $value }} extents"
+          description: "The sparsebundle bands are fragmented enough to be worth defragmenting. Do it by hand: delete the snapshots under the snapshot directory first, then `btrfs filesystem defragment -r -t 32M` the subvolume, and let the timer rebuild them. Defragmenting while the snapshots exist unshares their extents and multiplies the space they use."

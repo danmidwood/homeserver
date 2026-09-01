@@ -74,7 +74,7 @@
       # If docker0 ever changed subnet, node-exporter would fail to bind and
       # the unit would fail loudly, and TargetDown would fire within ten
       # minutes. That is the right failure direction for a change like this.
-      NODE_EXPORTER_ARGS="--web.listen-address=172.17.0.1:9100 --collector.textfile.directory=/var/lib/node_exporter/textfile_collector --collector.systemd --collector.systemd.unit-include=(telegram-bot|restic-backup|restic-restore-check|backup-alert|image-update-check|docker)\\.(service|timer)"
+      NODE_EXPORTER_ARGS="--web.listen-address=172.17.0.1:9100 --collector.textfile.directory=/var/lib/node_exporter/textfile_collector --collector.systemd --collector.systemd.unit-include=(telegram-bot|restic-backup|restic-restore-check|backup-alert|image-update-check|docker|smb|avahi-daemon|timemachine-snapshot)\\.(service|timer)"
     dest: /etc/conf.d/prometheus-node-exporter
     owner: root
     group: root

@@ -10,7 +10,7 @@ groups:
       # entirely healthy. Alerting on not-active would fire constantly for them,
       # so they are covered by the failed-state rule below instead.
       - alert: SystemdUnitFailed
-        expr: node_systemd_unit_state{name="telegram-bot.service",state="active"} == 0
+        expr: node_systemd_unit_state{name=~"(telegram-bot|smb|avahi-daemon)\\.service",state="active"} == 0
         for: 15m
         labels:
           severity: warning

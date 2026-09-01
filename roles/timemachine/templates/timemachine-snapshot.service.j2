@@ -1,0 +1,7 @@
+[Unit]
+Description=Snapshot the Time Machine subvolume
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/timemachine-snapshot.sh {{ timemachine_subvolume }} {{ timemachine_snapshot_dir }} {{ timemachine_snapshot_retention }}

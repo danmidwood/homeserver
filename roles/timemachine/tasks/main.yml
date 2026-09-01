@@ -1,0 +1,111 @@
+- name: Install Samba and Avahi
+  ansible.builtin.package:
+    name:
+      - samba
+      - avahi
+      - nss-mdns
+    state: present
+
+- name: Create the Time Machine subvolume
+  # A subvolume rather than a directory, because it is what can be snapshotted.
+  ansible.builtin.command:
+    cmd: "btrfs subvolume create {{ timemachine_subvolume }}"
+    creates: "{{ timemachine_subvolume }}"
+
+- name: Create the snapshot directory
+  ansible.builtin.file:
+    path: "{{ timemachine_snapshot_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Create a directory for each Mac
+  ansible.builtin.file:
+    path: "{{ timemachine_subvolume }}/{{ item.name }}"
+    state: directory
+    owner: "{{ timemachine_user }}"
+    group: "{{ timemachine_user }}"
+    mode: '0700'
+  loop: "{{ timemachine_shares }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Configure Samba
+  ansible.builtin.template:
+    src: smb.conf.j2
+    dest: /etc/samba/smb.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: 'testparm -s %s'
+  notify: Restart Samba
+
+- name: Set the Samba password
+  # Samba keeps its own password database, separate from the Unix one, so this
+  # is a different credential from the account password even though it is the
+  # same user. Run every time so a change in user_passwords.yml takes effect.
+  ansible.builtin.shell: |
+    set -euo pipefail
+    printf '%s\n%s\n' "{{ timemachine_samba_password }}" "{{ timemachine_samba_password }}" \
+      | smbpasswd -s -a {{ timemachine_user }}
+  args:
+    executable: /bin/bash
+  changed_when: false
+  no_log: true
+
+- name: Advertise Time Machine over mDNS
+  # macOS finds a Time Machine target by mDNS. Without this the share is
+  # reachable by name but never appears in the Time Machine preference pane.
+  ansible.builtin.template:
+    src: avahi-timemachine.service.j2
+    dest: /etc/avahi/services/timemachine.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Avahi
+
+- name: Enable Samba and Avahi
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - smb
+    - avahi-daemon
+
+- name: Install the snapshot script
+  ansible.builtin.copy:
+    src: timemachine-snapshot.sh
+    dest: /usr/local/bin/timemachine-snapshot.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the snapshot unit
+  ansible.builtin.template:
+    src: timemachine-snapshot.service.j2
+    dest: /etc/systemd/system/timemachine-snapshot.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for Time Machine
+
+- name: Install the snapshot timer
+  ansible.builtin.template:
+    src: timemachine-snapshot.timer.j2
+    dest: /etc/systemd/system/timemachine-snapshot.timer
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload systemd for Time Machine
+
+- name: Flush handlers so systemd sees the units before the timer is enabled
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the snapshot timer
+  ansible.builtin.systemd:
+    name: timemachine-snapshot.timer
+    enabled: true
+    state: started
+    daemon_reload: true

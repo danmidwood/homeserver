@@ -1,0 +1,29 @@
+# The btrfs subvolume holding every Time Machine share. Snapshots are taken of
+# this, so one snapshot covers every Mac at once.
+timemachine_subvolume: /mnt/tmdas/timemachine
+timemachine_snapshot_dir: /mnt/tmdas/timemachine-snapshots
+
+# The Macs that back up here. size is what Time Machine is told it may use;
+# it fills to that and then prunes its own oldest backups, so this is the
+# eventual footprint rather than a limit it is unlikely to reach.
+timemachine_shares:
+  - name: danmbp
+    comment: "MacBook"
+    size: 400G
+
+timemachine_user: daniel
+
+# Daily snapshots, two weeks of them. Each costs only the bands Time Machine
+# rewrote that day.
+timemachine_snapshot_retention: 14
+
+# Average extents per band file, above which the sparsebundle is fragmented
+# enough to be worth a manual defragment. Copy-on-write and Time Machine's
+# random 8 MB band rewrites guarantee this climbs; the number is a starting
+# point to be tuned once there is a few months of history to look at.
+#
+# Defragmenting is deliberately not scheduled: it breaks the reflinks that make
+# the snapshots cheap, so an automatic defrag would quietly multiply the space
+# they use. Dropping the snapshots first, defragmenting, then letting the timer
+# rebuild them avoids that, and is a decision worth taking deliberately.
+timemachine_fragmentation_threshold: 50

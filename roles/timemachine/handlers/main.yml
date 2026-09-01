@@ -1,0 +1,13 @@
+- name: Restart Samba
+  ansible.builtin.systemd:
+    name: smb
+    state: restarted
+
+- name: Restart Avahi
+  ansible.builtin.systemd:
+    name: avahi-daemon
+    state: restarted
+
+- name: Reload systemd for Time Machine
+  ansible.builtin.systemd:
+    daemon_reload: true
