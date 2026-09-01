@@ -23,6 +23,8 @@ type Bot struct {
 	Restartable   []string
 	InboxDir      string
 	StateFile     string
+	VikunjaURL    string
+	VikunjaToken  string
 	Run           Runner
 }
 
@@ -37,6 +39,7 @@ func (b *Bot) help() string {
 	sb.WriteString("/restart &lt;service&gt; — restart one app container\n")
 	sb.WriteString("/doorbell [today|yesterday|YYYY-MM-DD] [all] — doorbell clips\n")
 	sb.WriteString("/whatspiked [HH:MM] — explain a load or temperature spike\n")
+	sb.WriteString("/nexttask — the top task in each project, and anything due today\n")
 	sb.WriteString("/help — this message\n\n")
 	sb.WriteString("Send a photo or a document to save it to the inbox (20 MB limit).\n\n")
 
@@ -94,6 +97,8 @@ func (b *Bot) Handle(ctx context.Context, m *Message) string {
 		return b.restart(ctx, arg)
 	case "/doorbell":
 		return b.doorbell(ctx, m.Chat.ID, arg)
+	case "/nexttask":
+		return b.nextTask(ctx)
 	case "/whatspiked":
 		return b.whatspiked(ctx, arg)
 	case "/help", "/start":

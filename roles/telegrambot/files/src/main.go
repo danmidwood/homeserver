@@ -40,6 +40,8 @@ func main() {
 		},
 		PromURL:       mustEnv("PROMETHEUS_URL"),
 		AlertURL:      mustEnv("ALERTMANAGER_URL"),
+		VikunjaURL:    os.Getenv("VIKUNJA_URL"),
+		VikunjaToken:  os.Getenv("VIKUNJA_TOKEN"),
 		AllowedUserID: userID,
 		Restartable:   strings.Split(mustEnv("TELEGRAM_RESTARTABLE"), ","),
 		InboxDir:      inbox,
