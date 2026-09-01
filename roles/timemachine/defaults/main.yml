@@ -7,8 +7,8 @@ timemachine_snapshot_dir: /mnt/tmdas/timemachine-snapshots
 # it fills to that and then prunes its own oldest backups, so this is the
 # eventual footprint rather than a limit it is unlikely to reach.
 timemachine_shares:
-  - name: danmbp
-    comment: "MacBook"
+  - name: mbp_13_2017
+    comment: "MacBook Pro 13\" 2017"
     size: 400G
 
 timemachine_user: daniel
