@@ -26,8 +26,13 @@ groups:
       # sparsebundle over time. Defragmenting is deliberately not scheduled: it
       # breaks the reflinks that make the snapshots cheap. This says when it is
       # worth doing by hand, after dropping the snapshots.
+      #
+      # 200 rather than a round 50: the first backup measured 50 extents per
+      # band before a single incremental had run, so 50 is the floor this
+      # workload starts at rather than a level worth acting on. Tune it once
+      # there are a few months of the metric to look at.
       - alert: TimeMachineFragmentationHigh
-        expr: timemachine_band_extents_avg > 50
+        expr: timemachine_band_extents_avg > 200
         for: 24h
         labels:
           severity: info

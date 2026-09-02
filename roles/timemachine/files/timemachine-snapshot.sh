@@ -37,7 +37,11 @@ used=$(du -sb "$SUBVOL" 2>/dev/null | cut -f1)
 # Average extents across a sample of sparsebundle bands. Every band is the same
 # size, so the average is comparable over time; sampling keeps this cheap on a
 # share that holds tens of thousands of them.
-sample=$(find "$SUBVOL" -path '*/bands/*' -type f 2>/dev/null | head -200)
+# head closes the pipe once it has enough lines, which kills find with SIGPIPE
+# and makes the pipeline exit 141. Under pipefail that aborts the script, so
+# this one pipeline runs without it. The first run passed only because the
+# share was empty and find never wrote enough to be cut off.
+sample=$(set +o pipefail; find "$SUBVOL" -path '*/bands/*' -type f 2>/dev/null | head -200)
 extents=0
 files=0
 if [ -n "$sample" ]; then
@@ -75,3 +79,7 @@ timemachine_band_extents_avg ${avg}
 timemachine_band_sample_size ${files}
 METRICS
 mv "${METRICS_FILE}.tmp" "${METRICS_FILE}"
+
+# Said out loud so a run that reaches the end is distinguishable in the journal
+# from one that died partway with nothing to show for it.
+echo "snapshot taken, ${count} retained, ${files} bands sampled averaging ${avg} extents"
