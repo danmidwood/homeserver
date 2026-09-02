@@ -4,7 +4,16 @@
       - samba
       - avahi
       - nss-mdns
+      # filefrag, which the snapshot job uses to measure how fragmented the
+      # sparsebundle has become.
+      - e2fsprogs
     state: present
+    # Declared packages are explicitly installed, not dependencies. Without
+    # this an already-present package keeps whatever reason it had, so
+    # something this repository requires can still be removed as an orphan
+    # when whatever happened to pull it in goes away.
+    reason: explicit
+    reason_for: all
 
 - name: Create the Time Machine subvolume
   # A subvolume rather than a directory, because it is what can be snapshotted.

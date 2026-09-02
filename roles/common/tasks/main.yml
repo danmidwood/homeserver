@@ -8,7 +8,27 @@
       # reachable from the internet and btmp grows accordingly.
       - logrotate
       - pacman-contrib
+      # openssl generates Authelia's secrets, Vikunja's signing key and the
+      # FTPS certificate; python runs the Arch news collector. Both were
+      # present only as dependencies of something else, which is not the same
+      # as being required.
+      - openssl
+      - python
+      # Reached for when something is wrong, which is not the moment to
+      # discover they are missing.
+      - htop
+      - lsof
+      - tmux
+      - vim
+      - wget
+      - unzip
     state: present
+    # Declared packages are explicitly installed, not dependencies. Without
+    # this an already-present package keeps whatever reason it had, so
+    # something this repository requires can still be removed as an orphan
+    # when whatever happened to pull it in goes away.
+    reason: explicit
+    reason_for: all
 
 - name: Set timezone
   community.general.timezone:

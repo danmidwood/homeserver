@@ -3,7 +3,17 @@
     name:
       - mdadm
       - rsync
+      # Every filesystem on this host is btrfs, and the Time Machine snapshot
+      # job is built on it. It was installed by hand and nothing depended on
+      # it, so a tidy-up of unused packages would have taken it.
+      - btrfs-progs
     state: present
+    # Declared packages are explicitly installed, not dependencies. Without
+    # this an already-present package keeps whatever reason it had, so
+    # something this repository requires can still be removed as an orphan
+    # when whatever happened to pull it in goes away.
+    reason: explicit
+    reason_for: all
 
 - name: Ensure Terra Master DAS drives config for raid array in /etc/mdadm.conf
   ansible.builtin.lineinfile:
