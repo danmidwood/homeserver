@@ -376,6 +376,50 @@ fi
 # Alertmanager treats an alert whose endsAt is in the past as resolved, and
 # matches it to the existing one by its label set, so these labels must stay
 # identical to the ones raised below.
+# An ImageUpdateAvailable alert names the tag the container was running when it
+# was raised. Once that container is upgraded the alert is answering a question
+# nobody is asking, but a pushed alert stays firing until its endsAt passes --
+# so an upgrade done today is still reported as outstanding for up to a day
+# afterwards. It surfaces when an unrelated new alert joins the group and
+# Alertmanager re-sends every member, dragging the answered ones along.
+#
+# Any active alert whose current_tag no longer matches what its container runs,
+# or whose container has gone, is resolved by re-sending its exact label set
+# with endsAt in the past. The labels must match to the letter or Alertmanager
+# treats it as a different alert and raises it instead.
+resolve_stale_update_alerts() {
+  local running active
+  running="$(docker ps --format '{{.Names}} {{.Config.Image}}' 2>/dev/null \
+    || docker ps --format '{{.Names}}' | while read -r c; do
+         printf '%s %s\n' "$c" "$(docker inspect "$c" --format '{{.Config.Image}}' 2>/dev/null)"
+       done)"
+
+  active="$(curl -sf --max-time 30 "${ALERTMANAGER_URL}?active=true" 2>/dev/null)" || return 0
+
+  local stale
+  stale="$(printf '%s' "$active" | jq -c --arg running "$running" '
+    ($running | split("\n") | map(select(length > 0) | split(" ")
+      | {key: .[0], value: (.[1] // "" | split("@")[0] | split("/") | last
+        | if test(":") then split(":") | last else "latest" end)}) | from_entries) as $now
+    | [ .[]
+        | select(.labels.alertname == "ImageUpdateAvailable")
+        | select(.status.state != "suppressed")
+        | select($now[.labels.container] == null or $now[.labels.container] != .labels.current_tag)
+        | {labels: .labels, annotations: .annotations} ]')" || return 0
+
+  [[ "$(printf '%s' "$stale" | jq 'length')" -gt 0 ]] || return 0
+
+  printf '%s' "$stale" | jq \
+    --arg starts "$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg ends "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    'map(. + {startsAt: $starts, endsAt: $ends})' \
+    | curl -sf "${RETRY[@]}" --max-time 30 \
+        -H "Content-Type: application/json" \
+        --data @- "$ALERTMANAGER_URL" >/dev/null || true
+
+  echo "resolved $(printf '%s' "$stale" | jq 'length') answered update alert(s)" >&2
+}
+
 resolve_failure_alert() {
   # startsAt is an hour back, not this run's start: Alertmanager rejects an
   # alert whose endsAt precedes its startsAt, and a fast run would produce
@@ -400,6 +444,9 @@ resolve_failure_alert() {
 
 if [[ "$failed" -eq 0 ]]; then
   resolve_failure_alert
+  # Only when every image was checked. A run that could not reach a registry
+  # does not know whether an alert it cannot see is still true.
+  resolve_stale_update_alerts
 fi
 
 if [[ "$failed" -gt 0 ]]; then
