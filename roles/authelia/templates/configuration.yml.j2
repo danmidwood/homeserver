@@ -95,6 +95,13 @@ identity_providers:
 {% for uri in client.redirect_uris %}
           - '{{ uri }}'
 {% endfor %}
+        # Every client here is confidential and uses the authorization code
+        # flow. Left unset Authelia also permits the implicit response types,
+        # which is both broader than anything needs and inconsistent with
+        # offline_access -- 4.39.21 warns about exactly that on the Kavita
+        # client, and says the warning becomes an error in a later version.
+        response_types:
+          - 'code'
         response_modes:
 {% for mode in client.response_modes | default(['form_post', 'query']) %}
           - '{{ mode }}'
