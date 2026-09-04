@@ -310,10 +310,17 @@ while read -r name image; do
 
   count="$(printf '%s\n' "$considered" | grep -c . )"
   newest="$(printf '%s\n' "$considered" | tail -1)"
+
+  # Tab-separated, for tools/bump-patch. Emitted here rather than reimplemented
+  # there, so the two can never disagree about what the newest tag is.
+  if [[ "${IMAGEWATCH_REPORT:-}" == "1" ]]; then
+    printf '%s\t%s\t%s\t%s\n' "$name" "${registry}/${repo}" "$tag" "$newest"
+  fi
   sample="$(printf '%s\n' "$considered" | tail -5 | tr '\n' ' ' | sed 's/ $//')"
 
   e_image="$(printf '%s' "${registry}/${repo}:${tag}" | html_escape)"
   e_newest="$(printf '%s' "$newest" | html_escape)"
+  e_tag="$(printf '%s' "$tag" | html_escape)"
   e_sample="$(printf '%s' "$sample" | html_escape)"
 
   alerts="$(printf '%s' "$alerts" | jq \
@@ -322,7 +329,7 @@ while read -r name image; do
     --arg newest "$e_newest" \
     --arg sample "$e_sample" \
     --arg count "$count" \
-    --arg tag "$tag" \
+    --arg tag "$e_tag" \
     --arg note "$shape_note" \
     --arg starts "$STARTS_AT" \
     --arg ends "$ENDS_AT" \
@@ -336,7 +343,7 @@ while read -r name image; do
           current_tag: $tag
         },
         annotations: {
-          summary: ($name + ": " + $newest + " is available"),
+          summary: ($name + ": " + $tag + " \u2192 " + $newest),
           description: ("Running " + $image + ". " + $count + " newer tag(s) available" + $note + "; most recent: " + $sample + ". Bump the pinned tag and digest in the Ansible role that owns this container.")
         },
         startsAt: $starts,

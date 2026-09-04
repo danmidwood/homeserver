@@ -81,6 +81,16 @@ container is running fine and something in front of it is broken — Caddy lost
 its upstream, or the application inside is wedged. That distinction is the
 whole reason both rules exist.
 
+### `EndpointDown` for `auth.home.danmidwood.com`
+Every application's login goes through this one container, so nothing can be
+signed into while it is down. If it followed an image change, see
+[Rolling an image back](#rolling-an-image-back) -- a downgrade can leave
+Authelia unable to read a database a newer version has already migrated.
+
+```bash
+docker logs --tail 20 authelia
+```
+
 ### `TimeMachineSnapshotStale` / `TimeMachineSnapshotNeverRan`
 No read-only snapshot of the Time Machine share in over 36 hours. Time Machine
 keeps its own history, so this is not about losing a file — the snapshots are
@@ -384,6 +394,51 @@ sudo btrfs filesystem usage /mnt/tmdas
 
 If free space is tight, do it in parts by pointing the defrag at one Mac's
 directory at a time rather than the whole subvolume.
+
+---
+
+## Rolling an image back
+
+Reverting the pin in the role and running the playbook is usually enough. It is
+not always enough, and Authelia is the example.
+
+**Authelia 4.39.22 migrates its storage schema on first start, and 4.39.21 then
+refuses to run against it:**
+
+```
+error during schema migrate: current schema version is greater than the latest
+known schema version, you must downgrade to schema version 27 before you can
+use this version of Authelia
+```
+
+The container crash-loops, every application behind it stops accepting logins,
+and `EndpointDown` fires about five minutes later. Nothing about the version
+numbers says this will happen -- it looks like any other patch release.
+
+To actually go back, the database has to go back with the image:
+
+```bash
+# 1. Stop it crash-looping while you work.
+docker rm -f authelia
+
+# 2. Restore the database from the night before the upgrade. The whole
+#    directory is in backup_paths, so restic has it.
+sudo restic restore latest --target / \
+  --include /mnt/storage/config/authelia/data
+
+# 3. Revert the pin in roles/authelia/defaults/main.yml, then deploy.
+ansible-playbook -i inventory/hosts.ini playbooks/xps.yml
+```
+
+Restoring the database loses any second factor registered since that snapshot,
+because the registrations live in it. The secrets directory must NOT be
+restored selectively alongside a newer one: storage_encryption_key has to match
+the database it encrypted, so restore both or neither.
+
+The general rule: check the release notes for a schema migration before
+upgrading anything whose data you would need to bring back. `tools/bump-patch`
+prints a reminder for the same reason, and deliberately stops at editing pins
+rather than deploying.
 
 ---
 

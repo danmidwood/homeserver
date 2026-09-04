@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+#
+# Rewrites the pinned tag and digest for containers with a newer patch release.
+#
+#   tools/bump-patch                 every container, showing what would change
+#   tools/bump-patch --apply         rewrite the pins
+#   tools/bump-patch authelia --apply
+#
+# It stops at the pins. Deploying is left to `ansible-playbook`, because the
+# deploy is the part worth watching -- Authelia alone gates six applications --
+# and it is already one command. What this removes is the tedium either side:
+# finding the newest tag, resolving its digest, and editing the same reference
+# in two places in whichever file happens to hold it.
+#
+# Patch releases only, by default. 4.39.21 to 4.39.22 yes; 4.39 to 4.40 no.
+# A minor bump is a decision: 4.39.21 changed how Authelia validates client
+# configuration, and warned that a setting this repository relied on would
+# become an error. --minor relaxes it when that is what you want.
+#
+# A patch bump is not necessarily reversible. Authelia 4.39.22 migrates its
+# storage schema on first start, and 4.39.21 then refuses to run against it --
+# reverting the pin is not enough, the database has to come back too. Nothing
+# distinguishes that release from any other patch from the outside, so treat
+# every bump as one-way unless you have checked otherwise. This writes pins; it
+# does not decide that a version is safe.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CHECKER=/usr/local/bin/image-update-check.sh
+ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://localhost:9093/api/v2/alerts}"
+
+apply=0
+allow_minor=0
+wanted=()
+for arg in "$@"; do
+  case "$arg" in
+    --apply) apply=1 ;;
+    --minor) allow_minor=1 ;;
+    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*) echo "unknown option: $arg" >&2; exit 2 ;;
+    *) wanted+=("$arg") ;;
+  esac
+done
+
+[[ -x "$CHECKER" ]] || { echo "ERROR: $CHECKER not found. Run the playbook first." >&2; exit 1; }
+
+# Containers with an active silence are held deliberately -- immich-postgres is
+# pinned to the Postgres major Immich itself ships. A convenience tool must not
+# quietly undo that.
+silenced="$(curl -sf --max-time 15 "${ALERTMANAGER_URL%/alerts}/silences" 2>/dev/null \
+  | jq -r '.[] | select(.status.state == "active") | .matchers[] | select(.name == "container") | .value' 2>/dev/null || true)"
+
+# is_patch_bump <current> <candidate>
+# True when everything before the final dot-separated component matches, so the
+# only thing that moved is the last number. Tags carrying a suffix, such as
+# v0.9.1.0-ls122, are compared with the suffix intact.
+is_patch_bump() {
+  local cur="$1" new="$2"
+  [[ "$cur" == *.* && "$new" == *.* ]] || return 1
+  [[ "${cur%.*}" == "${new%.*}" ]]
+}
+
+changed=0
+skipped=0
+
+while IFS=$'\t' read -r name image cur new; do
+  [[ -n "$name" ]] || continue
+
+  if [[ ${#wanted[@]} -gt 0 ]] && ! printf '%s\n' "${wanted[@]}" | grep -qxF "$name"; then
+    continue
+  fi
+
+  if printf '%s\n' "$silenced" | grep -qxF "$name"; then
+    echo "  $name: held by an Alertmanager silence, leaving it alone"
+    skipped=$((skipped + 1))
+    continue
+  fi
+
+  if [[ "$allow_minor" -eq 0 ]] && ! is_patch_bump "$cur" "$new"; then
+    echo "  $name: $cur -> $new is not a patch bump, skipping (use --minor)"
+    skipped=$((skipped + 1))
+    continue
+  fi
+
+  # The pin in the repository carries the digest the container is running, so
+  # the old reference can be found by exact string rather than by guessing
+  # which file and how many times it appears.
+  old_digest="$(docker inspect "$name" --format '{{.Config.Image}}' 2>/dev/null | sed -n 's/.*@\(sha256:[a-f0-9]*\)$/\1/p')"
+  if [[ -z "$old_digest" ]]; then
+    echo "  $name: running an unpinned image, skipping" >&2
+    skipped=$((skipped + 1))
+    continue
+  fi
+  old_ref="${image}:${cur}@${old_digest}"
+
+  files="$(grep -rlF "$old_ref" "$REPO_ROOT/roles" 2>/dev/null || true)"
+  if [[ -z "$files" ]]; then
+    echo "  $name: no pin in this repository matches what it is running, skipping" >&2
+    skipped=$((skipped + 1))
+    continue
+  fi
+
+  echo "  $name: $cur -> $new"
+
+  # Only when writing. A dry run should not pull images, and the digest is
+  # read from the pulled image because this host has no buildx.
+  if [[ "$apply" -eq 1 ]]; then
+    docker pull -q "${image}:${new}" >/dev/null 2>&1 || true
+    new_digest="$(docker inspect "${image}:${new}" --format '{{index .RepoDigests 0}}' 2>/dev/null | sed -n 's/.*@\(sha256:[a-f0-9]*\)$/\1/p')"
+    if [[ -z "$new_digest" ]]; then
+      echo "      could not resolve a digest for ${image}:${new}, leaving the pin alone" >&2
+      skipped=$((skipped + 1))
+      continue
+    fi
+    new_ref="${image}:${new}@${new_digest}"
+  fi
+
+  while read -r f; do
+    n="$(grep -cF "$old_ref" "$f")"
+    echo "      ${f#"$REPO_ROOT"/} (${n} reference$([[ "$n" -gt 1 ]] && echo s))"
+    if [[ "$apply" -eq 1 ]]; then
+      python3 - "$f" "$old_ref" "$new_ref" <<'PY'
+import sys, pathlib
+path, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
+p = pathlib.Path(path)
+p.write_text(p.read_text().replace(old, new))
+PY
+    fi
+  done <<< "$files"
+  changed=$((changed + 1))
+done < <(IMAGEWATCH_REPORT=1 IMAGEWATCH_DRYRUN=1 "$CHECKER" 2>/dev/null | grep -P '^\S+\t')
+
+echo
+if [[ "$changed" -eq 0 ]]; then
+  echo "nothing to bump ($skipped skipped)"
+  exit 0
+fi
+
+if [[ "$apply" -eq 1 ]]; then
+  echo "$changed pin(s) rewritten, $skipped skipped. Review and deploy:"
+  echo "  git diff"
+  echo "  ansible-playbook -i inventory/hosts.ini playbooks/xps.yml"
+  echo
+  echo "A patch release can migrate a database and become one-way. Check the"
+  echo "release notes before deploying anything you would need to undo."
+else
+  echo "$changed pin(s) would change, $skipped skipped. Re-run with --apply."
+fi
